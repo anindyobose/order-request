@@ -1,0 +1,316 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  BUYER
+  ORDER_OPERATOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum PriceMode {
+  FIXED
+  QUOTE
+}
+
+enum StockStatus {
+  IN_STOCK
+  LIMITED
+  OUT_OF_STOCK
+}
+
+enum OrderStatus {
+  REQUESTED
+  REVIEWING
+  AWAITING_BUYER_CONFIRMATION
+  AWAITING_PAYMENT
+  PAYMENT_VERIFIED
+  READY_TO_DISPATCH
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  NOT_DUE
+  PENDING
+  PARTIALLY_PAID
+  VERIFIED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  UPI
+  CARD_OFFLINE
+  OTHER
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  RETRY
+  FAILED
+}
+
+model User {
+  id               String               @id @default(cuid())
+  name             String
+  email            String?              @unique
+  phone            String?              @unique
+  passwordHash     String
+  role             Role                 @default(BUYER)
+  status           UserStatus           @default(ACTIVE)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  addresses        Address[]
+  orders           Order[]
+  sessions         Session[]
+  resetTokens      PasswordResetToken[]
+  paymentRecords   PaymentRecord[]      @relation("RecordedPayments")
+  verifiedPayments PaymentRecord[]      @relation("VerifiedPayments")
+  orderEvents      OrderEvent[]         @relation("OrderEventActor")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Address {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipientName String
+  phone         String
+  line1         String
+  line2         String?
+  city          String
+  state         String
+  postalCode    String
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, isDefault])
+}
+
+model Product {
+  id          String         @id @default(cuid())
+  sku         String         @unique
+  slug        String         @unique
+  name        String
+  description String
+  category    String
+  brand       String?
+  price       Int            @default(0)
+  priceMode   PriceMode      @default(FIXED)
+  stockStatus StockStatus    @default(IN_STOCK)
+  active      Boolean        @default(false)
+  archived    Boolean        @default(false)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  images      ProductImage[]
+  orderItems  OrderItem[]
+
+  @@index([active, archived, category, sortOrder])
+  @@index([name])
+  @@index([brand])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  altText   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, sortOrder])
+}
+
+model Order {
+  id                   String            @id @default(cuid())
+  orderNumber          String            @unique
+  idempotencyKey       String
+  userId               String
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status               OrderStatus       @default(REQUESTED)
+  paymentStatus        PaymentStatus     @default(NOT_DUE)
+  subtotal             Int
+  deliveryFee          Int               @default(0)
+  discount             Int               @default(0)
+  finalAmount          Int?
+  buyerNotes           String?
+  termsMessage         String?
+  internalNotes        String?
+  cancellationReason   String?
+  termsConfirmedAt     DateTime?
+  termsBuyerAcceptedAt DateTime?
+  addressSnapshot      Json
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  items                OrderItem[]
+  paymentRecords       PaymentRecord[]
+  shipments            Shipment[]
+  events               OrderEvent[]
+  notificationJobs     NotificationJob[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model OrderItem {
+  id                  String    @id @default(cuid())
+  orderId             String
+  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId           String?
+  product             Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  skuSnapshot         String
+  productNameSnapshot String
+  priceMode           PriceMode
+  requestedQuantity   Int
+  quantity            Int
+  requestedUnitPrice  Int?
+  agreedUnitPrice     Int?
+  agreedVariant       String?
+
+  @@index([orderId])
+}
+
+model PaymentRecord {
+  id           String        @id @default(cuid())
+  orderId      String
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount       Int
+  method       PaymentMethod
+  reference    String?
+  recordedById String
+  recordedBy   User          @relation("RecordedPayments", fields: [recordedById], references: [id], onDelete: Restrict)
+  verifiedById String?
+  verifiedBy   User?         @relation("VerifiedPayments", fields: [verifiedById], references: [id], onDelete: Restrict)
+  verifiedAt   DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model Shipment {
+  id             String    @id @default(cuid())
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courier        String
+  trackingNumber String?
+  notes          String?
+  dispatchedAt   DateTime
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([orderId, dispatchedAt])
+}
+
+model OrderEvent {
+  id         String       @id @default(cuid())
+  orderId    String
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actor      User?        @relation("OrderEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  fromStatus OrderStatus?
+  toStatus   OrderStatus?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model NotificationSettings {
+  id                            String   @id @default("global")
+  adminRecipients               String[] @default([])
+  newOrderEmailEnabled          Boolean  @default(true)
+  buyerTermsEmailEnabled        Boolean  @default(true)
+  buyerPaymentEmailEnabled      Boolean  @default(true)
+  buyerDispatchEmailEnabled     Boolean  @default(true)
+  buyerCancellationEmailEnabled Boolean  @default(true)
+  buyerDispatchSmsEnabled       Boolean  @default(true)
+  updatedAt                     DateTime @updatedAt
+}
+
+model NotificationJob {
+  id             String              @id @default(cuid())
+  idempotencyKey String              @unique
+  orderId        String?
+  order          Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  eventType      String
+  channel        NotificationChannel
+  recipient      String
+  templateData   Json
+  status         NotificationStatus  @default(PENDING)
+  attempts       Int                 @default(0)
+  nextAttemptAt  DateTime            @default(now())
+  claimedAt      DateTime?
+  sentAt         DateTime?
+  lastError      String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([orderId, createdAt])
+}
+
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  windowAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WorkerHeartbeat {
+  id        String   @id @default("notifications")
+  updatedAt DateTime @updatedAt
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
