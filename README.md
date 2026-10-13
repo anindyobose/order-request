@@ -75,6 +75,7 @@ The `web` container deploys migrations before starting Next.js. The separate `wo
 - SMS is optional. Configure an approved `SMS_PROVIDER_URL` and `SMS_PROVIDER_TOKEN`, and ensure local consent, sender registration, and provider terms are satisfied before enabling it.
 - `/api/health` reports database and notification-worker health. The admin settings page shows the same readiness alongside provider configuration, per-event email/SMS preferences, failed-job retry controls, and health checks.
 - Product image uploads accept JPEG, PNG, or WebP, up to 5 MB each. Uploaded files are written beneath `public/uploads`; protect that storage with durable backups and access controls.
+- Administrators can bulk-import `.xlsx` workbooks or UTF-8 `.csv` files from `/admin/products`. Use the downloadable template: rows are matched by SKU, new SKUs are added, and existing SKUs have their catalog fields updated. Files are limited to 1,000 products and 5 MB, validated as a whole, and applied atomically; existing images and archive status are preserved.
 - The starter catalog uses externally hosted sample photography. Replace it with shop-owned or properly licensed product images before production; product-management uploads are stored locally.
 - Order operations are role-checked and audited. Terms must be accepted by the buyer, payment records must be separately verified by staff, and full verification is required before the order can be readied for dispatch.
 

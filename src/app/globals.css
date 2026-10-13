@@ -765,6 +765,13 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .product-admin-layout { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr); gap: 15px; align-items: start; }
 .product-admin-layout > section { min-width: 0; }
 .product-admin-list { max-height: 800px; overflow: auto; }
+.product-import-section { margin-top: 18px; }
+.product-import-section .admin-orders-heading .button { flex: 0 0 auto; margin: 0; }
+.product-import-section .account-help { max-width: 850px; margin: 14px 0; line-height: 1.6; }
+.product-import-form { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
+.product-import-form label { flex: 1 1 280px; }
+.product-import-form input[type="file"] { width: 100%; margin-top: 7px; color: #667267; font-size: 10px; }
+.product-import-form .button { flex: 0 0 auto; margin: 0; }
 .admin-product-list { margin: 12px -20px -20px; }
 .include-archived { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; color: #768075; font-size: 9px; }
 .include-archived input, .check-field input { accent-color: #526c56; }

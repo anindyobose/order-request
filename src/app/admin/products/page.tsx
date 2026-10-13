@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Music2, PackagePlus, Save, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Download, Music2, PackagePlus, Save, Trash2, Upload } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -121,6 +121,47 @@ export default function AdminProductsPage() {
     }
   }
 
+  async function importProducts(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = new FormData(form).get("file");
+    if (!(file instanceof File)) {
+      setError("Choose an .xlsx or .csv product file.");
+      return;
+    }
+    if (file.size < 1 || file.size > 5 * 1024 * 1024) {
+      setError("Spreadsheet files must be between 1 byte and 5 MB.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      const response = await fetch("/api/admin/products/import", {
+        method: "POST",
+        credentials: "same-origin",
+        body,
+      });
+      const result = await response.json() as {
+        created?: number;
+        updated?: number;
+        error?: string;
+      };
+      if (!response.ok || result.created === undefined || result.updated === undefined) {
+        throw new Error(result.error ?? "The product spreadsheet could not be imported.");
+      }
+      form.reset();
+      setMessage(`Import complete: ${result.created} added, ${result.updated} updated.`);
+      await loadProducts();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The product spreadsheet could not be imported.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function uploadImage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.id) {
@@ -209,6 +250,17 @@ export default function AdminProductsPage() {
       <div className="admin-content">
         <div className="admin-page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> SHOP CATALOG</div><h1>Instruments, <em>well cared for.</em></h1><p>Create, update, publish or archive catalog products and their images.</p></div></div>
         {error && <p className="form-message error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}
+        <section className="admin-orders-section product-import-section">
+          <div className="admin-orders-heading">
+            <div><h2>Import products</h2><p>Upload an Excel workbook or CSV to add products and update matching SKUs.</p></div>
+            <a className="button button-outline" href="/product-import-template.csv" download><Download size={15} /> Download template</a>
+          </div>
+          <p className="account-help">Use the first worksheet and keep the template’s column names. Matching SKUs are updated; images and archived status are preserved. The whole file is checked before any changes are saved (up to 1,000 rows, 5 MB).</p>
+          <form className="request-form product-import-form" onSubmit={(event) => void importProducts(event)}>
+            <label>Excel workbook (.xlsx) or CSV<input name="file" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required /></label>
+            <button className="button button-dark" disabled={busy}><Upload size={15} /> {busy ? "Importing…" : "Import products"}</button>
+          </form>
+        </section>
         <div className="product-admin-layout">
           <section className="admin-orders-section product-admin-list"><div className="admin-orders-heading"><div><h2>Products ({products.length})</h2><p>Unpublished products are not shown to shoppers.</p></div><button className="profile-add-button" onClick={() => { setDraft(emptyDraft); setError(""); setMessage(""); }}><PackagePlus size={15} /> New product</button></div><label className="include-archived"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Include archived</label>
             <div className="admin-product-list">{products.map((product) => <button key={product.id} className={`admin-order-row ${draft.id === product.id ? "selected" : ""}`} onClick={() => editProduct(product)}><span className="admin-order-row-top"><strong>{product.name}</strong><span>{product.active ? "Published" : product.archived ? "Archived" : "Draft"}</span></span><span className="admin-order-row-bottom"><span>{product.sku} · {product.category}</span><span>{product.priceMode === "QUOTE" ? "Quote" : `₹${product.price.toLocaleString("en-IN")}`}</span></span></button>)}</div>
