@@ -29,7 +29,8 @@ import {
   validationError,
 } from "@/lib/domain";
 import {
-  enqueueBuyerNotices,
+  enqueueBuyerDispatchSms,
+  enqueueBuyerStatusNotice,
   enqueueConfiguredAdminNotices,
   orderItemsSummary,
   notificationSettings,
@@ -114,8 +115,6 @@ const typeDefs = /* GraphQL */ `
   }
   type NotificationSettings {
     adminRecipients: [String!]!, newOrderEmailEnabled: Boolean!
-    buyerTermsEmailEnabled: Boolean!, buyerPaymentEmailEnabled: Boolean!
-    buyerDispatchEmailEnabled: Boolean!, buyerCancellationEmailEnabled: Boolean!
     buyerDispatchSmsEnabled: Boolean!
     emailConfigured: Boolean!, smsConfigured: Boolean!
   }
@@ -157,8 +156,6 @@ const typeDefs = /* GraphQL */ `
   input ProductImageInput { url: String!, altText: String!, sortOrder: Int! }
   input NotificationSettingsInput {
     adminRecipients: [String!]!, newOrderEmailEnabled: Boolean!
-    buyerTermsEmailEnabled: Boolean!, buyerPaymentEmailEnabled: Boolean!
-    buyerDispatchEmailEnabled: Boolean!, buyerCancellationEmailEnabled: Boolean!
     buyerDispatchSmsEnabled: Boolean!
   }
   input DispatchInput {
@@ -167,6 +164,7 @@ const typeDefs = /* GraphQL */ `
 
   type Query {
     me: User
+    adminUsers(search: String): [User!]!
     products(filter: ProductFilter, page: PageInput): ProductConnection!
     catalogFacets: CatalogFacets!
     product(slug: String!): Product
@@ -183,6 +181,7 @@ const typeDefs = /* GraphQL */ `
   }
   type Mutation {
     updateMyProfile(name: String!, email: String, phone: String): User!
+    setUserRole(userId: ID!, role: Role!): User!
     saveAddress(input: AddressInput!): Address!
     updateAddress(addressId: ID!, input: AddressUpdateInput!): Address!
     deleteAddress(addressId: ID!): Boolean!
@@ -315,9 +314,29 @@ async function createOrderEvent(
   toStatus: OrderStatus | null,
   metadata?: Prisma.InputJsonObject,
 ) {
-  await tx.orderEvent.create({
+  const event = await tx.orderEvent.create({
     data: { orderId, actorId, action, fromStatus, toStatus, metadata },
   });
+  if (toStatus !== null && fromStatus !== toStatus) {
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        finalAmount: true,
+        deliveryFee: true,
+        user: { select: { email: true } },
+      },
+    });
+    await enqueueBuyerStatusNotice(
+      tx,
+      event.id,
+      order,
+      fromStatus,
+      toStatus,
+      order.user.email,
+    );
+  }
 }
 
 async function orderTransaction<T>(
@@ -346,6 +365,30 @@ const resolvers: IResolvers<unknown, AuthContext> = {
   JSON: jsonScalar,
   Query: {
     me: (_: unknown, __: unknown, ctx: AuthContext) => ctx.user,
+    adminUsers: async (_: unknown, { search }: { search?: string }, ctx: AuthContext) => {
+      requireRole(ctx.user, adminRoles);
+      const normalizedSearch = search?.trim();
+      if (normalizedSearch && normalizedSearch.length < 2) {
+        throw validationError("Enter at least two characters to search for a user.");
+      }
+      if (normalizedSearch && normalizedSearch.length > 100) {
+        throw validationError("User search must be at most 100 characters.");
+      }
+      return prisma.user.findMany({
+        where: normalizedSearch
+          ? {
+              OR: [
+                { name: { contains: normalizedSearch, mode: "insensitive" } },
+                { email: { contains: normalizedSearch, mode: "insensitive" } },
+                { phone: { contains: normalizedSearch, mode: "insensitive" } },
+              ],
+            }
+          : {},
+        select: { id: true, name: true, email: true, phone: true, role: true, status: true },
+        orderBy: [{ role: "asc" }, { name: "asc" }],
+        take: 50,
+      });
+    },
     products: async (
       _: unknown,
       args: {
@@ -597,6 +640,30 @@ const resolvers: IResolvers<unknown, AuthContext> = {
     },
   },
   Mutation: {
+    setUserRole: async (
+      _: unknown,
+      { userId, role }: { userId: string; role: Role },
+      ctx: AuthContext,
+    ) => {
+      const admin = requireRole(ctx.user, adminRoles);
+      if (userId === admin.id) {
+        throw validationError("You cannot change your own administrator role.");
+      }
+      if (role !== Role.ADMIN && role !== Role.ORDER_OPERATOR) {
+        throw validationError("User access can only be granted or revoked between administrator and order operator.");
+      }
+      return prisma.$transaction(async (tx) => {
+        const target = await tx.user.findUnique({ where: { id: userId } });
+        if (!target) throw new GraphQLError("User not found.", { extensions: { code: "NOT_FOUND" } });
+        if (target.role === Role.ADMIN && role !== Role.ADMIN) {
+          const administratorCount = await tx.user.count({ where: { role: Role.ADMIN } });
+          if (administratorCount <= 1) {
+            throw validationError("The last administrator cannot be revoked. Grant another administrator role first.");
+          }
+        }
+        return tx.user.update({ where: { id: userId }, data: { role } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    },
     updateMyProfile: async (
       _: unknown,
       args: { name: string; email?: string | null; phone?: string | null },
@@ -773,6 +840,7 @@ const resolvers: IResolvers<unknown, AuthContext> = {
           });
           await createOrderEvent(tx, order.id, user.id, "REQUEST_SUBMITTED", null, OrderStatus.REQUESTED, {
             itemCount: input.items.reduce((sum, item) => sum + item.quantity, 0),
+            buyerNote: input.buyerNotes?.trim().slice(0, 1000) || null,
           });
           await enqueueConfiguredAdminNotices(tx, order, "ORDER_REQUESTED", {
             orderNumber,
@@ -825,7 +893,15 @@ const resolvers: IResolvers<unknown, AuthContext> = {
         const order = await tx.order.findUnique({ where: { orderNumber } });
         if (!order) throw new GraphQLError("Request not found.", { extensions: { code: "NOT_FOUND" } });
         await tx.order.update({ where: { id: order.id }, data: { internalNotes: cleanNotes } });
-        await createOrderEvent(tx, order.id, staff.id, "CALL_NOTES_UPDATED", order.status, order.status);
+        await createOrderEvent(
+          tx,
+          order.id,
+          staff.id,
+          "CALL_NOTES_UPDATED",
+          order.status,
+          order.status,
+          { notes: cleanNotes },
+        );
         return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: orderInclude() });
       });
     },
@@ -910,15 +986,12 @@ const resolvers: IResolvers<unknown, AuthContext> = {
           "FINAL_TERMS_RECORDED",
           fromStatus,
           OrderStatus.AWAITING_BUYER_CONFIRMATION,
-          { finalAmount, deliveryFee, discount },
-        );
-        await enqueueBuyerNotices(
-          tx,
-          updated,
-          "ORDER_TERMS_CONFIRMED",
-          order.user.email,
-          order.user.phone,
-          { orderNumber: order.orderNumber, finalAmount, currency: "INR" },
+          {
+            finalAmount,
+            deliveryFee,
+            discount,
+            buyerMessage: input.buyerMessage?.trim().slice(0, 1000) || null,
+          },
         );
         return updated;
       });
@@ -1067,16 +1140,6 @@ const resolvers: IResolvers<unknown, AuthContext> = {
           updated.status,
           { paymentRecordId, verifiedAmount: payment.amount, verifiedTotal: paid },
         );
-        if (fullyPaid) {
-          await enqueueBuyerNotices(
-            tx,
-            updated,
-            "ORDER_PAYMENT_VERIFIED",
-            updated.user.email,
-            updated.user.phone,
-            { orderNumber: order.orderNumber, paidAmount: paid, currency: "INR" },
-          );
-        }
         return updated;
       });
     },
@@ -1137,12 +1200,11 @@ const resolvers: IResolvers<unknown, AuthContext> = {
         await createOrderEvent(tx, order.id, staff.id, "ORDER_DISPATCHED", order.status, updated.status, {
           courier,
           hasTracking: Boolean(input.trackingNumber?.trim()),
+          dispatchNote: input.notes?.trim().slice(0, 1000) || null,
         });
-        await enqueueBuyerNotices(
+        await enqueueBuyerDispatchSms(
           tx,
           updated,
-          "ORDER_DISPATCHED",
-          order.user.email,
           order.user.phone,
           {
             orderNumber: order.orderNumber,
@@ -1217,18 +1279,6 @@ const resolvers: IResolvers<unknown, AuthContext> = {
           reason: cancellationReason,
           refundFollowUp: refundFollowUp ? "Refund follow-up required." : null,
         });
-        await enqueueBuyerNotices(
-          tx,
-          updated,
-          "ORDER_CANCELLED",
-          order.user.email,
-          order.user.phone,
-          {
-            orderNumber: order.orderNumber,
-            reason: cancellationReason,
-            refundFollowUp: refundFollowUp ? "A refund follow-up is pending with the shop." : "",
-          },
-        );
         return updated;
       });
     },
@@ -1377,10 +1427,6 @@ const resolvers: IResolvers<unknown, AuthContext> = {
       { input }: { input: {
         adminRecipients: string[];
         newOrderEmailEnabled: boolean;
-        buyerTermsEmailEnabled: boolean;
-        buyerPaymentEmailEnabled: boolean;
-        buyerDispatchEmailEnabled: boolean;
-        buyerCancellationEmailEnabled: boolean;
         buyerDispatchSmsEnabled: boolean;
       } },
       ctx: AuthContext,

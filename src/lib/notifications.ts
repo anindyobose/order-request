@@ -3,6 +3,7 @@ import {
   NotificationSettings,
   Order,
   OrderItem,
+  OrderStatus,
   Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -57,46 +58,54 @@ export async function enqueueConfiguredAdminNotices(
   }
 }
 
-export async function enqueueBuyerNotices(
+export async function enqueueBuyerStatusNotice(
+  db: NotificationTransaction,
+  eventId: string,
+  order: OrderNotice,
+  fromStatus: OrderStatus | null,
+  toStatus: OrderStatus,
+  email: string | null,
+) {
+  if (!email) return;
+  const idempotencyKey = `${order.orderNumber}:STATUS:${eventId}:EMAIL:${email.toLowerCase()}`;
+  await db.notificationJob.upsert({
+    where: { idempotencyKey },
+    create: {
+      idempotencyKey,
+      orderId: order.id,
+      eventType: "ORDER_STATUS_UPDATED",
+      channel: NotificationChannel.EMAIL,
+      recipient: email,
+      templateData: {
+        orderNumber: order.orderNumber,
+        fromStatus: fromStatus ?? "",
+        toStatus,
+      },
+    },
+    update: {},
+  });
+}
+
+export async function enqueueBuyerDispatchSms(
   db: NotificationTransaction,
   order: OrderNotice,
-  eventType: string,
-  email: string | null,
   phone: string | null,
   templateData: Prisma.InputJsonObject,
 ) {
+  if (!phone) return;
   const settings = await notificationSettings(db);
-  const enabled =
-    eventType === "ORDER_TERMS_CONFIRMED"
-      ? settings.buyerTermsEmailEnabled
-      : eventType === "ORDER_PAYMENT_VERIFIED"
-        ? settings.buyerPaymentEmailEnabled
-        : eventType === "ORDER_CANCELLED"
-          ? settings.buyerCancellationEmailEnabled
-          : settings.buyerDispatchEmailEnabled;
-  if (email && enabled) {
-    await enqueueOrderEmail(
-      db,
-      order,
-      eventType,
-      email,
-      templateData,
-    );
-  }
   if (
-    eventType === "ORDER_DISPATCHED" &&
-    phone &&
     settings.buyerDispatchSmsEnabled &&
     process.env.SMS_PROVIDER_URL &&
     process.env.SMS_PROVIDER_TOKEN
   ) {
-    const idempotencyKey = `${order.orderNumber}:${eventType}:SMS:${phone}`;
+    const idempotencyKey = `${order.orderNumber}:ORDER_DISPATCHED:SMS:${phone}`;
     await db.notificationJob.upsert({
       where: { idempotencyKey },
       create: {
         idempotencyKey,
         orderId: order.id,
-        eventType,
+        eventType: "ORDER_DISPATCHED",
         channel: NotificationChannel.SMS,
         recipient: phone,
         templateData,

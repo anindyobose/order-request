@@ -7,17 +7,14 @@ import {
   CircleAlert,
   Clock3,
   CreditCard,
-  LogOut,
-  Music2,
   PackageCheck,
   Search,
   Truck,
-  Upload,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { graphqlRequest, ORDER_FIELDS, Order, OrderStatus } from "@/lib/api";
 import { formatPrice, statusLabel } from "@/lib/store";
 
@@ -62,9 +59,19 @@ const amount = (value: FormDataEntryValue | null) => Number(String(value ?? "").
 const adminStatusLabel = (value: OrderStatus) =>
   value === "AWAITING_BUYER_CONFIRMATION" ? "Awaiting buyer confirmation" : statusLabel(value);
 
+function auditMessage(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return null;
+  const values = metadata as Record<string, unknown>;
+  if (typeof values.notes === "string" && values.notes) return `Staff message: ${values.notes}`;
+  if (typeof values.buyerMessage === "string" && values.buyerMessage) return `Message to buyer: ${values.buyerMessage}`;
+  if (typeof values.buyerNote === "string" && values.buyerNote) return `Buyer message: ${values.buyerNote}`;
+  if (typeof values.dispatchNote === "string" && values.dispatchNote) return `Dispatch note: ${values.dispatchNote}`;
+  if (typeof values.reason === "string" && values.reason) return `Cancellation reason: ${values.reason}`;
+  return null;
+}
+
 export default function AdminPage() {
-  const router = useRouter();
-  const { user, loading: sessionLoading, logout } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const [orders, setOrders] = useState<Order[]>([]);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
@@ -287,15 +294,6 @@ export default function AdminPage() {
     );
   }
 
-  async function signOut() {
-    try {
-      await logout();
-      router.replace("/");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "We couldn’t sign you out.");
-    }
-  }
-
   function reviewNewRequest(orderNumber: string) {
     setStatus("");
     setSearch("");
@@ -325,16 +323,7 @@ export default function AdminPage() {
 
   return (
     <main className="admin-page">
-      <header className="admin-topbar">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
-        <div className="admin-topbar-right">
-          <span className="admin-workspace-label">SHOP WORKSPACE · {user.role === "ADMIN" ? "ADMIN" : "ORDER OPERATOR"}</span>
-          <Link href="/" className="workspace-back"><ArrowLeft size={15} /> View storefront</Link>
-          {user.role === "ADMIN" && <Link href="/admin/products" className="workspace-back"><Upload size={14} /> Product imports</Link>}
-          {user.role === "ADMIN" && <Link href="/admin/settings" className="workspace-back">Settings</Link>}
-          <button className="account-signout" onClick={() => void signOut()}><LogOut size={13} /> Sign out</button>
-        </div>
-      </header>
+      <AppHeader variant="admin" />
       <div className="admin-content">
         <div className="admin-page-heading">
           <div><div className="eyebrow"><span className="eyebrow-line" /> A GOOD DAY AT THE SHOP</div><h1>Morning, <em>music maker.</em></h1><p>Review requests, confirm terms, and keep each order moving.</p></div>
@@ -432,6 +421,15 @@ function OrderDetail({
     {order.status === "DISPATCHED" && <><div className="detail-block"><span className="detail-label">SHIPMENTS</span>{order.shipments.map((shipment) => <p key={shipment.dispatchedAt}>{shipment.courier}{shipment.trackingNumber ? ` · ${shipment.trackingNumber}` : ""}</p>)}</div><button className="button button-dark" disabled={busy} onClick={() => void onMutate("mutation MarkDelivered($orderNumber: String!) { markDelivered(orderNumber: $orderNumber) { id } }", { orderNumber: order.orderNumber }, "Order marked as delivered.")}>Mark delivered</button></>}
     {order.status === "CANCELLED" && order.paymentStatus === "REFUND_PENDING" && <form className="detail-block request-form" onSubmit={(event) => { event.preventDefault(); const reference = String(new FormData(event.currentTarget).get("reference") ?? "").trim() || null; void onMutate("mutation MarkRefunded($orderNumber: String!, $reference: String) { markRefunded(orderNumber: $orderNumber, reference: $reference) { id } }", { orderNumber: order.orderNumber, reference }, "Refund completion recorded in the audit history."); }}><span className="detail-label">REFUND FOLLOW-UP</span><p>Reconcile the refund outside this app, then record completion here.</p><label>Refund reference (optional)<input name="reference" maxLength={200} /></label><button className="button button-outline" disabled={busy}>Mark refund completed</button></form>}
     {!["CANCELLED", "DELIVERED", "DISPATCHED"].includes(order.status) && <form className="detail-block request-form" onSubmit={(event) => { event.preventDefault(); const reason = String(new FormData(event.currentTarget).get("reason") ?? "").trim(); if (reason && window.confirm("Cancel this request? Any refund follow-up must be handled separately.")) void onMutate("mutation CancelOrder($orderNumber: String!, $reason: String!) { cancelOrder(orderNumber: $orderNumber, reason: $reason) { id } }", { orderNumber: order.orderNumber, reason }, "Request cancelled. Review any refund follow-up separately."); }}><span className="detail-label">CANCELLATION</span><label>Reason<input name="reason" maxLength={500} minLength={3} required /></label><button className="button button-outline" disabled={busy}>Cancel request</button></form>}
-    <div className="detail-block"><span className="detail-label">AUDIT HISTORY</span>{events.map((event) => <div className="detail-item" key={event.id}><span><strong>{event.action.replaceAll("_", " ")}</strong><br />{event.actorName ?? "System"} · {new Date(event.createdAt).toLocaleString()}{event.metadata ? <small>{JSON.stringify(event.metadata)}</small> : null}</span>{event.fromStatus && event.toStatus && <small>{adminStatusLabel(event.fromStatus)} → {adminStatusLabel(event.toStatus)}</small>}</div>)}</div>
+    <div className="detail-block"><span className="detail-label">AUDIT HISTORY</span>{events.map((event) => {
+      const message = auditMessage(event.metadata);
+      const changedStatus = event.fromStatus && event.toStatus && event.fromStatus !== event.toStatus
+        ? `${adminStatusLabel(event.fromStatus)} → ${adminStatusLabel(event.toStatus)}`
+        : null;
+      return <div className="detail-item audit-event" key={event.id}>
+        <span><strong>{event.action.replaceAll("_", " ")}</strong><br />{changedStatus ? "Changed by" : message ? "Added by" : "Updated by"} {event.actorName ?? "System"} · {new Date(event.createdAt).toLocaleString()}{message && <small>{message}</small>}</span>
+        {changedStatus && <small>{changedStatus}</small>}
+      </div>;
+    })}</div>
   </>;
 }

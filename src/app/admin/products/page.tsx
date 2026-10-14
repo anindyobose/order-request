@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, Download, Music2, PackagePlus, Save, Trash2, Upload } from "lucide-react";
+import { Download, PackagePlus, Save, Trash2, Upload } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { CatalogProduct, graphqlRequest, PRODUCT_FIELDS } from "@/lib/api";
 
 type Draft = {
@@ -246,7 +247,7 @@ export default function AdminProductsPage() {
   const selected = products.find((product) => product.id === draft.id);
   return (
     <main className="admin-page">
-      <header className="admin-topbar"><Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link><div className="admin-topbar-right"><Link href="/admin" className="workspace-back"><ArrowLeft size={15} /> Orders</Link><Link href="/admin/settings" className="workspace-back">Settings</Link></div></header>
+      <AppHeader variant="admin" />
       <div className="admin-content">
         <div className="admin-page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> SHOP CATALOG</div><h1>Instruments, <em>well cared for.</em></h1><p>Create, update, publish or archive catalog products and their images.</p></div></div>
         {error && <p className="form-message error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}

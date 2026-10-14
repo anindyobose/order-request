@@ -86,6 +86,16 @@ function messageFor(job) {
         subject: `New request ${data.orderNumber}`,
         text: `A new order request was received.\nBuyer: ${data.customerName}\nContact: ${data.customerEmail || data.customerPhone}\nItems: ${data.items}\nReview it in the shop dashboard.`,
       };
+    case "ORDER_STATUS_UPDATED": {
+      const fromStatus = String(data.fromStatus ?? "").replaceAll("_", " ").toLowerCase();
+      const toStatus = String(data.toStatus ?? "").replaceAll("_", " ").toLowerCase();
+      return {
+        subject: `Status update for your request ${data.orderNumber}`,
+        text: fromStatus
+          ? `The status of your request ${data.orderNumber} has changed from ${fromStatus} to ${toStatus}.\nSign in to My Requests to see the latest details.`
+          : `Your request ${data.orderNumber} has been received and is now ${toStatus}.\nSign in to My Requests to follow its progress.`,
+      };
+    }
     case "ORDER_TERMS_CONFIRMED":
       return {
         subject: `Your request ${data.orderNumber}: terms are ready`,

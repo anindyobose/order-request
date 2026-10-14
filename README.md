@@ -53,7 +53,7 @@ Docker Compose is also supported for running the web app, database, and notifica
    npm run worker
    ```
 
-   Visit [http://localhost:3000](http://localhost:3000). Staff sign in at `/login`; administrators manage orders at `/admin`, products at `/admin/products`, and notification settings at `/admin/settings`.
+   Visit [http://localhost:3000](http://localhost:3000). Staff sign in at `/login`; administrators manage orders at `/admin`, products at `/admin/products`, user access at `/admin/users`, and notification settings at `/admin/settings`.
 
 For schema development, edit `prisma/schema.prisma`, create a migration with `npm run db:migrate`, and commit the generated migration. Deployments should use `npm run db:deploy`, not `migrate dev`.
 
@@ -70,13 +70,14 @@ The `web` container deploys migrations before starting Next.js. The separate `wo
 
 ## Accounts, notifications, and operations
 
-- Registration creates buyer accounts. Staff roles are assigned out of band by a trusted database administrator; the public API cannot grant staff roles.
+- Registration creates buyer accounts. Administrators can grant admin access or revoke it from `/admin/users`; revoking leaves the user as an order operator. The API blocks self-demotion and prevents revoking the last administrator.
 - Sessions use opaque HttpOnly cookies, password hashes use bcrypt, and recovery tokens are single-use and time-limited. Configure a real SMTP relay (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`) to deliver account recovery and order email. Without SMTP, jobs remain visible and are retried or marked failed; recovery mail is not shown in the browser.
 - SMS is optional. Configure an approved `SMS_PROVIDER_URL` and `SMS_PROVIDER_TOKEN`, and ensure local consent, sender registration, and provider terms are satisfied before enabling it.
-- `/api/health` reports database and notification-worker health. The admin settings page shows the same readiness alongside provider configuration, per-event email/SMS preferences, failed-job retry controls, and health checks.
+- `/api/health` reports database and notification-worker health. The admin settings page shows the same readiness, administrator new-order emails, optional dispatch SMS, failed-job retry controls, and health checks. Buyer status-update emails are queued for every order status change and are not disabled by event preferences; delivery requires a configured email provider and worker.
 - Product image uploads accept JPEG, PNG, or WebP, up to 5 MB each. Uploaded files are written beneath `public/uploads`; protect that storage with durable backups and access controls.
 - Administrators can bulk-import `.xlsx` workbooks or UTF-8 `.csv` files from `/admin/products`. Use the downloadable template: rows are matched by SKU, new SKUs are added, and existing SKUs have their catalog fields updated. Prices are whole rupees; use `FIXED`/`QUOTE`, `IN_STOCK`/`LIMITED`/`OUT_OF_STOCK`, and true/false (or yes/no, 1/0) for the corresponding fields. To import a product picture, embed one JPEG or PNG in that product's row in the Excel template's `image` column; it replaces the primary image while retaining the rest of the gallery. CSV cannot contain embedded pictures. Files are limited to 1,000 products and 5 MB, validated as a whole, and applied atomically; rows without a new picture preserve existing images and archive status.
 - The staff request dashboard checks for new customer requests every 10 seconds and shows a dismissible notification with a shortcut to the new request. Polling failures are announced in the dashboard and retried automatically.
+- Every order status transition is recorded in the audit history with its actor; staff and buyer messages are included with the author. A buyer email notification is queued in the same transaction for each transition.
 - The starter catalog uses externally hosted sample photography. Replace it with shop-owned or properly licensed product images before production; product-management uploads are stored locally.
 - Order operations are role-checked and audited. Sending final terms moves the order to “Awaiting buyer confirmation.” The buyer can accept in My Requests, or staff can record payment details (amount, method, and optional transaction ID) to advance it to “Awaiting payment”; staff payment entry does not record buyer acceptance or verify funds. Payment records must be separately verified by staff, and full verification is required before the order can be readied for dispatch.
 

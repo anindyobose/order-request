@@ -8,7 +8,6 @@ import {
   CircleHelp,
   Headphones,
   Heart,
-  Menu,
   Minus,
   Music2,
   Plus,
@@ -25,6 +24,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { formatPrice } from "@/lib/store";
 import { updateCart, useCart } from "@/lib/cart-store";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { Address, CatalogProduct, graphqlRequest, PRODUCT_FIELDS } from "@/lib/api";
 
 const categoryDesign: Record<string, { icon: string; color: string }> = {
@@ -63,7 +63,6 @@ export function Storefront() {
   const [submittedOrder, setSubmittedOrder] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("All instruments");
   const [search, setSearch] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [requestError, setRequestError] = useState("");
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressesLoading, setAddressesLoading] = useState(false);
@@ -285,39 +284,7 @@ export function Storefront() {
         <ArrowRight size={14} aria-hidden="true" />
       </div>
 
-      <header className="site-header">
-        <Link href="/" className="brand" aria-label="New Chandan Musicals home">
-          <span className="brand-mark"><Music2 size={20} strokeWidth={2.4} /></span>
-          <span className="brand-name">New Chandan<span>musicals</span></span>
-        </Link>
-        <nav className={`main-nav ${mobileMenuOpen ? "is-open" : ""}`} aria-label="Main navigation">
-          <a href="#shop" onClick={() => setMobileMenuOpen(false)}>Shop all</a>
-          <a href="#collections" onClick={() => setMobileMenuOpen(false)}>Collections</a>
-          <a href="#our-story" onClick={() => setMobileMenuOpen(false)}>Our story</a>
-          <a href="#visit" onClick={() => setMobileMenuOpen(false)}>Visit us</a>
-          <Link className="mobile-account-link" href={user ? "/account/orders" : "/login"}>{user ? "My requests" : "Sign in"}</Link>
-        </nav>
-        <div className="header-actions">
-          <Link className="account-link" href={user ? "/account/orders" : "/login"}>{user ? "My requests" : "Sign in"}</Link>
-          {user && ["ADMIN", "ORDER_OPERATOR"].includes(user.role) && <Link className="account-link admin-header-link" href="/admin">Shop dashboard</Link>}
-          <button
-            className="icon-button bag-button"
-            onClick={() => setCartOpen(true)}
-            aria-label={`Open request bag, ${itemCount} items`}
-          >
-            <ShoppingBag size={19} />
-            <span className="bag-count">{itemCount}</span>
-          </button>
-          <button
-            className="icon-button menu-button"
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? <X size={21} /> : <Menu size={21} />}
-          </button>
-        </div>
-      </header>
+      <AppHeader variant="storefront" itemCount={itemCount} onOpenBag={() => setCartOpen(true)} />
 
       <section className="hero">
         <div className="hero-copy">

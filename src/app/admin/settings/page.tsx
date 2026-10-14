@@ -1,18 +1,15 @@
 "use client";
 
-import { ArrowLeft, Bell, RefreshCw, Save } from "lucide-react";
+import { RefreshCw, Save } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { graphqlRequest } from "@/lib/api";
 
 type Settings = {
   adminRecipients: string[];
   newOrderEmailEnabled: boolean;
-  buyerTermsEmailEnabled: boolean;
-  buyerPaymentEmailEnabled: boolean;
-  buyerDispatchEmailEnabled: boolean;
-  buyerCancellationEmailEnabled: boolean;
   buyerDispatchSmsEnabled: boolean;
   emailConfigured: boolean;
   smsConfigured: boolean;
@@ -33,7 +30,7 @@ type Job = {
 };
 
 type Health = { status: string; database: string; notificationWorker: string };
-const SETTINGS_FIELDS = "adminRecipients newOrderEmailEnabled buyerTermsEmailEnabled buyerPaymentEmailEnabled buyerDispatchEmailEnabled buyerCancellationEmailEnabled buyerDispatchSmsEnabled emailConfigured smsConfigured";
+const SETTINGS_FIELDS = "adminRecipients newOrderEmailEnabled buyerDispatchSmsEnabled emailConfigured smsConfigured";
 
 export default function AdminSettingsPage() {
   const { user, loading } = useSession();
@@ -87,10 +84,6 @@ export default function AdminSettingsPage() {
       const input = {
         adminRecipients,
         newOrderEmailEnabled: settings.newOrderEmailEnabled,
-        buyerTermsEmailEnabled: settings.buyerTermsEmailEnabled,
-        buyerPaymentEmailEnabled: settings.buyerPaymentEmailEnabled,
-        buyerDispatchEmailEnabled: settings.buyerDispatchEmailEnabled,
-        buyerCancellationEmailEnabled: settings.buyerCancellationEmailEnabled,
         buyerDispatchSmsEnabled: settings.buyerDispatchSmsEnabled,
       };
       await graphqlRequest(
@@ -129,7 +122,7 @@ export default function AdminSettingsPage() {
 
   return (
     <main className="admin-page">
-      <header className="admin-topbar"><Link href="/" className="brand"><span className="brand-mark"><Bell size={19} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link><div className="admin-topbar-right"><Link href="/admin" className="workspace-back"><ArrowLeft size={15} /> Orders</Link><Link href="/admin/products" className="workspace-back">Products</Link></div></header>
+      <AppHeader variant="admin" />
       <div className="admin-content">
         <div className="admin-page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> SHOP OPERATIONS</div><h1>Settings & <em>notices.</em></h1><p>Configure notification preferences and monitor their delivery status.</p></div></div>
         {error && <p className="form-message error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}
@@ -142,15 +135,12 @@ export default function AdminSettingsPage() {
             <HealthValue label="SMS PROVIDER" value={settings?.smsConfigured ? "configured" : "not configured"} />
           </div>
         </section>
-        {settings && <section className="admin-orders-section">
+        {settings &&         <section className="admin-orders-section">
           <h2 className="profile-section-title">Notification preferences</h2>
           <form className="request-form notification-settings-form" onSubmit={(event) => void saveSettings(event)}>
+            <p className="account-help">Buyer status-update emails are queued for every request status change and cannot be disabled here. Delivery depends on the configured email provider and worker health.</p>
             <label>Administrator email recipients <span>Separate up to 20 addresses with commas or spaces.</span><textarea rows={3} value={recipientsText} onChange={(event) => setRecipientsText(event.target.value)} placeholder="shop@example.com" /></label>
             <Toggle label="Email administrators when a new order is submitted" checked={settings.newOrderEmailEnabled} onChange={(value) => setSettings({ ...settings, newOrderEmailEnabled: value })} />
-            <Toggle label="Email buyers when final terms are confirmed" checked={settings.buyerTermsEmailEnabled} onChange={(value) => setSettings({ ...settings, buyerTermsEmailEnabled: value })} />
-            <Toggle label="Email buyers when payment is verified" checked={settings.buyerPaymentEmailEnabled} onChange={(value) => setSettings({ ...settings, buyerPaymentEmailEnabled: value })} />
-            <Toggle label="Email buyers when orders are dispatched" checked={settings.buyerDispatchEmailEnabled} onChange={(value) => setSettings({ ...settings, buyerDispatchEmailEnabled: value })} />
-            <Toggle label="Email buyers when a request is cancelled" checked={settings.buyerCancellationEmailEnabled} onChange={(value) => setSettings({ ...settings, buyerCancellationEmailEnabled: value })} />
             <Toggle label="SMS buyers when orders are dispatched" checked={settings.buyerDispatchSmsEnabled} onChange={(value) => setSettings({ ...settings, buyerDispatchSmsEnabled: value })} />
             <p className="password-guidance">Provider secrets are environment configuration, not stored in this settings form. No provider is simulated.</p>
             <button className="button button-dark" disabled={busy}><Save size={15} /> Save preferences</button>

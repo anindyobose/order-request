@@ -1,18 +1,15 @@
 "use client";
 
 import {
-  ArrowLeft,
   ArrowRight,
-  LogOut,
-  Music2,
   PackageCheck,
   ShoppingBag,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { graphqlRequest, ORDER_FIELDS, Order } from "@/lib/api";
 import { formatPrice, statusLabel } from "@/lib/store";
 
@@ -42,8 +39,7 @@ function OrderProgress({ status }: { status: Order["status"] }) {
 }
 
 export default function AccountOrdersPage() {
-  const router = useRouter();
-  const { user, loading: sessionLoading, error: sessionError, logout } = useSession();
+  const { user, loading: sessionLoading, error: sessionError } = useSession();
   const [orders, setOrders] = useState<Order[]>([]);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -80,28 +76,9 @@ export default function AccountOrdersPage() {
     return () => window.clearTimeout(timer);
   }, [loadOrders]);
 
-  async function signOut() {
-    try {
-      await logout();
-      router.replace("/");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "We couldn’t sign you out.");
-    }
-  }
-
   return (
     <main className="account-page">
-      <header className="workspace-header">
-        <Link href="/" className="brand">
-          <span className="brand-mark"><Music2 size={20} /></span>
-          <span className="brand-name">New Chandan<span>Musicals</span></span>
-        </Link>
-        <div className="account-header-actions">
-          {user && <Link href="/account/profile" className="workspace-back"><UserRound size={14} /> My profile</Link>}
-          {user && <button className="account-signout" onClick={() => void signOut()}><LogOut size={13} /> Sign out</button>}
-          <Link href="/" className="workspace-back"><ArrowLeft size={15} /> Back to the shop</Link>
-        </div>
-      </header>
+      <AppHeader variant="account" />
       <div className="account-content">
         <div className="account-heading">
           <div className="eyebrow"><span className="eyebrow-line" /> YOUR LITTLE COLLECTION</div>

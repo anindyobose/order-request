@@ -99,6 +99,10 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 }
 .main-nav a:hover, .account-link:hover { color: var(--orange); }
 .header-actions { display: flex; align-items: center; gap: 25px; }
+.home-signout-link { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 11px; cursor: pointer; }
+.home-signout-link:hover { color: var(--orange); }
+.mobile-signout-link { display: none; }
+.header-auth-error { position: absolute; z-index: 10; top: calc(100% + 5px); right: 6%; max-width: min(360px, 90vw); padding: 9px 12px; border: 1px solid #ead3cb; background: #fffefa; color: #a0523e; font-size: 10px; box-shadow: 0 5px 16px rgba(35,48,39,.08); }
 .account-link { color: var(--ink); }
 .icon-button {
   border: 0;
@@ -125,7 +129,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   font-size: 9px;
   font-weight: 700;
 }
-.menu-button, .mobile-account-link { display: none; }
+.menu-button, .mobile-account-link, .mobile-dashboard-link, .mobile-signout-link { display: none; }
 
 .hero {
   display: grid;
@@ -564,6 +568,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   padding: 0 max(calc((100vw - 1240px) / 2), 6%);
   border-bottom: 1px solid var(--line);
   background: var(--paper);
+  position: relative;
 }
 .account-page .workspace-header { gap: 24px; }
 .account-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px 22px; min-width: 0; }
@@ -623,6 +628,9 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 .admin-topbar { height: 72px; }
 .admin-topbar-right { display: flex; align-items: center; gap: 23px; }
+.app-workspace-header { gap: 24px; }
+.app-workspace-header .account-header-actions, .app-workspace-header .admin-topbar-right { flex-wrap: wrap; min-width: 0; }
+.app-workspace-header .account-header-actions > *, .app-workspace-header .admin-topbar-right > * { flex: 0 0 auto; white-space: nowrap; }
 .admin-workspace-label { color: #8b9085; font-size: 8px; font-weight: 700; letter-spacing: .14em; }
 .admin-content { width: min(100% - 48px, 1120px); }
 .admin-page-heading { display: flex; align-items: end; justify-content: space-between; margin: 32px 0 23px; }
@@ -683,6 +691,19 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .detail-item small { color: #92968b; }
 .admin-topbar-right .account-signout { border: 0; background: transparent; }
 .admin-order-detail > .button { margin: 8px 0; }
+.admin-user-search { display: flex; align-items: end; gap: 10px; margin-top: 16px; }
+.admin-user-search .admin-search { flex: 1 1 auto; }
+.admin-user-search .button { flex: 0 0 auto; margin: 0; }
+.admin-user-list { display: grid; margin-top: 14px; }
+.admin-user-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 13px 0; border-bottom: 1px solid #eeede5; }
+.admin-user-information { display: grid; gap: 4px; min-width: 0; }
+.admin-user-information strong { color: #506255; font-size: 11px; }
+.admin-user-information span, .admin-user-information small { overflow-wrap: anywhere; color: #85897f; font-size: 9px; }
+.admin-user-information small { text-transform: capitalize; }
+.admin-user-row .button { flex: 0 0 auto; min-height: 34px; margin: 0; font-size: 9px; }
+.audit-event { align-items: flex-start; }
+.audit-event > span { display: grid; gap: 4px; }
+.audit-event small { overflow-wrap: anywhere; white-space: pre-wrap; }
 .request-form .button-outline { min-height: 34px; margin-top: 0; }
 .note-save { display: flex; align-items: center; gap: 4px; color: #9b9d93; font-size: 7px; }
 .note-save svg { color: #648267; }
@@ -819,10 +840,11 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 @media (max-width: 1000px) {
   .site-header { padding-right: 4%; padding-left: 4%; }
+  .header-actions { gap: 14px; }
   .hero { padding-right: 4%; padding-left: 4%; min-height: 478px; }
   .hero-image-wrap { height: 370px; }
   .hero h1 { font-size: 65px; }
-  .main-nav { gap: 21px; }
+  .main-nav { gap: 15px; margin-left: 14px; }
   .collections-section, .shop-section { padding-right: 4%; padding-left: 4%; }
   .shop-catalog { grid-template-columns: 168px 1fr; gap: 25px; }
   .product-grid { gap: 23px 12px; }
@@ -852,10 +874,13 @@ button:focus-visible, a:focus-visible, input:focus-visible {
     box-shadow: 0 12px 20px rgba(35,48,39,.08);
   }
   .main-nav.is-open { display: flex; }
-  .main-nav a { padding: 12px 2px; border-bottom: 1px solid #eeece4; font-size: 12px; }
+  .main-nav a, .main-nav button { padding: 12px 2px; border: 0; border-bottom: 1px solid #eeece4; background: transparent; color: #556358; text-align: left; font-size: 12px; cursor: pointer; }
   .header-actions { gap: 12px; }
+  .header-actions .home-signout-link { display: none; }
+  .main-nav .mobile-signout-link { display: block; }
   .account-link { display: none; }
   .mobile-account-link { display: block; }
+  .main-nav .mobile-dashboard-link { display: block; }
   .menu-button { display: inline-flex; }
   .hero { grid-template-columns: 1fr; padding: 0 5%; }
   .hero-copy { padding: 49px 0 27px; }
@@ -928,6 +953,9 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .workspace-header, .admin-topbar { height: 65px; padding: 0 5%; }
   .account-page .workspace-header { height: auto; min-height: 65px; flex-wrap: wrap; gap: 10px 14px; padding-top: 10px; padding-bottom: 10px; }
   .account-header-actions { flex: 1 1 100%; justify-content: flex-start; gap: 9px 16px; }
+  .app-workspace-header { height: auto !important; min-height: 65px; flex-wrap: wrap; gap: 10px 14px; padding-top: 10px; padding-bottom: 10px; }
+  .app-workspace-header .admin-topbar-right, .app-workspace-header .account-header-actions { flex: 1 1 100%; justify-content: flex-start; gap: 9px 16px; }
+  .app-workspace-header .admin-topbar-right .workspace-back { margin-left: 0; font-size: 8px; }
   .workspace-header .workspace-back { font-size: 8px; }
   .account-content, .admin-content { width: calc(100% - 32px); padding-top: 21px; }
   .account-heading { margin: 28px 0 20px; }
@@ -939,6 +967,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .account-order-item strong { font-size: 8px; }
   .admin-workspace-label { display: none; }
   .admin-topbar-right { gap: 0; }
+  .app-workspace-header .admin-topbar-right { gap: 9px 16px; }
   .admin-page-heading { align-items: flex-start; flex-direction: column; gap: 10px; margin: 25px 0 17px; }
   .admin-page-heading h1 { font-size: 35px; }
   .admin-metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -966,6 +995,9 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .product-admin-list { max-height: 340px; }
   .service-health-grid { grid-template-columns: 1fr 1fr; }
   .product-template-links { width: 100%; }
+  .admin-user-search { align-items: stretch; flex-direction: column; }
+  .admin-user-search .button { align-self: flex-start; }
+  .admin-user-row { align-items: flex-start; flex-direction: column; }
   .live-request-notice { flex-wrap: wrap; }
   .live-request-notice > div { flex-basis: calc(100% - 38px); }
 }

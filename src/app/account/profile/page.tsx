@@ -1,17 +1,16 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, LogOut, Music2, Plus, Star, Trash2, UserRound } from "lucide-react";
+import { ArrowRight, Plus, Star, Trash2, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { Address, graphqlRequest } from "@/lib/api";
 
 const ADDRESS_FIELDS = "id recipientName phone line1 line2 city state postalCode isDefault createdAt updatedAt";
 
 export default function AccountProfilePage() {
-  const router = useRouter();
-  const { user, loading, error: sessionError, reload, logout } = useSession();
+  const { user, loading, error: sessionError, reload } = useSession();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [address, setAddress] = useState<Address | null>(null);
   const [error, setError] = useState("");
@@ -131,15 +130,6 @@ export default function AccountProfilePage() {
     }
   }
 
-  async function signOut() {
-    try {
-      await logout();
-      router.replace("/");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "We couldn’t sign you out.");
-    }
-  }
-
   if (loading) return <main className="account-page"><div className="app-loading">Checking your account…</div></main>;
   if (!user) {
     return <main className="account-page"><div className="account-content"><section className="account-empty"><span className="account-empty-icon"><UserRound size={23} /></span><h2>Sign in to your account.</h2><p>{sessionError || "Your profile and saved delivery addresses are private to you."}</p><Link className="button button-dark" href="/login?returnTo=%2Faccount%2Fprofile">Sign in <ArrowRight size={15} /></Link></section></div></main>;
@@ -147,10 +137,7 @@ export default function AccountProfilePage() {
 
   return (
     <main className="account-page">
-      <header className="workspace-header">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
-        <div className="account-header-actions"><Link href="/account/orders" className="workspace-back"><ArrowLeft size={15} /> My requests</Link><button className="account-signout" onClick={() => void signOut()}><LogOut size={13} /> Sign out</button></div>
-      </header>
+      <AppHeader variant="account" />
       <div className="account-content">
         <div className="account-heading"><div className="eyebrow"><span className="eyebrow-line" /> YOUR ACCOUNT</div><h1>Your <em>details.</em></h1><p>Just the details that help us look after your orders.</p></div>
         {error && <p className="form-message error" role="alert">{error}</p>}

@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, Music2, Plus, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, Plus, ShieldCheck } from "lucide-react";
+import { AppHeader } from "@/components/app-header";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense } from "react";
@@ -59,10 +60,7 @@ function ProductDetailsContent() {
 
   return (
     <main className="product-page">
-      <header className="workspace-header">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
-        <Link href="/#shop" className="workspace-back"><ArrowLeft size={15} /> All instruments</Link>
-      </header>
+      <AppHeader variant="storefront" compact />
       {error ? <section className="product-page-message"><h1>We couldn’t load this instrument.</h1><p role="alert">{error}</p><button className="button button-dark" onClick={() => void loadProduct()}>Try again</button></section> : !product ? <section className="product-page-message"><h1>This instrument has found a new home.</h1><p>It may no longer be available in our catalog.</p><Link className="button button-dark" href="/#shop">Browse instruments <ArrowRight size={15} /></Link></section> : (
         <article className="product-detail">
           <div className="product-detail-image" style={product.images[0] ? { backgroundImage: `url("${product.images[0].url}")` } : undefined}>

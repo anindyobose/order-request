@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, LogOut, Music2, PackageCheck, UserRound } from "lucide-react";
+import { ArrowRight, PackageCheck } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Suspense } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/auth-provider";
+import { AppHeader } from "@/components/app-header";
 import { graphqlRequest, ORDER_FIELDS, Order } from "@/lib/api";
 import { formatPrice, statusLabel } from "@/lib/store";
 
@@ -22,8 +23,7 @@ const progress: Order["status"][] = [
 
 function AccountOrderDetailsContent() {
   const { orderNumber } = useParams<{ orderNumber: string }>();
-  const router = useRouter();
-  const { user, loading: sessionLoading, logout } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -76,27 +76,11 @@ function AccountOrderDetailsContent() {
     }
   }
 
-  async function signOut() {
-    try {
-      await logout();
-      router.replace("/");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "We couldn’t sign you out.");
-    }
-  }
-
   if (sessionLoading || loading) return <main className="account-page"><div className="app-loading">Loading your request…</div></main>;
 
   return (
     <main className="account-page">
-      <header className="workspace-header">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
-        <div className="account-header-actions">
-          {user && <Link href="/account/profile" className="workspace-back"><UserRound size={14} /> My profile</Link>}
-          {user && <button className="account-signout" onClick={() => void signOut()}><LogOut size={13} /> Sign out</button>}
-          <Link href="/account/orders" className="workspace-back"><ArrowLeft size={15} /> My requests</Link>
-        </div>
-      </header>
+      <AppHeader variant="account" />
       <div className="account-content">
         {!user ? <section className="account-empty"><h1>Sign in to see your request.</h1><p>Order details are private to the account that placed the request.</p><Link className="button button-dark" href={`/login?returnTo=${encodeURIComponent(`/account/orders/${orderNumber}`)}`}>Sign in <ArrowRight size={15} /></Link></section> : error ? <section className="account-empty"><h1>We couldn’t load this request.</h1><p className="form-message error" role="alert">{error}</p><button className="button button-dark" onClick={() => void loadOrder()}>Try again</button></section> : !order ? <section className="account-empty"><h1>Request not found.</h1><p>This request may not exist or may belong to another account.</p><Link className="button button-dark" href="/account/orders">My requests <ArrowRight size={15} /></Link></section> : <>
           <div className="account-heading"><div className="eyebrow"><span className="eyebrow-line" /> YOUR REQUEST</div><h1>{order.orderNumber}</h1><p>We’ll keep you updated as your request moves through the shop.</p></div>
