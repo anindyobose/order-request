@@ -288,7 +288,7 @@ export function Storefront() {
       <header className="site-header">
         <Link href="/" className="brand" aria-label="New Chandan Musicals home">
           <span className="brand-mark"><Music2 size={20} strokeWidth={2.4} /></span>
-          <span className="brand-name">new chandan<span>musicals</span></span>
+          <span className="brand-name">New Chandan<span>musicals</span></span>
         </Link>
         <nav className={`main-nav ${mobileMenuOpen ? "is-open" : ""}`} aria-label="Main navigation">
           <a href="#shop" onClick={() => setMobileMenuOpen(false)}>Shop all</a>
@@ -334,7 +334,7 @@ export function Storefront() {
             <div className="avatar-stack" aria-hidden="true">
               <span>R</span><span>A</span><span>M</span>
             </div>
-            <p><strong>Picked with care.</strong><br />Played with joy, since 1998.</p>
+            <p><strong>Picked with care.</strong><br />Played with joy, since1983.</p>
           </div>
           <span className="hero-doodle doodle-one">♫</span>
           <span className="hero-doodle doodle-two">✳</span>
@@ -502,14 +502,14 @@ export function Storefront() {
 
       <section className="story-section" id="our-story">
         <div className="story-photo" role="img" aria-label="A lovingly cared for acoustic instrument in a music shop">
-          <div className="story-photo-label"><span>OUR LITTLE CORNER OF MUSIC</span><strong>Since 1998</strong></div>
+          <div className="story-photo-label"><span>OUR LITTLE CORNER OF MUSIC</span><strong>Since1983</strong></div>
           <span className="story-photo-stamp">LOCAL<br />& LOVING<br />IT</span>
         </div>
         <div className="story-copy">
           <div className="eyebrow"><span className="eyebrow-line" /> MORE THAN A MUSIC SHOP</div>
           <h2>We believe music is for <em>everybody.</em></h2>
           <p>Somewhere between your first shaky chord and the song you can’t stop playing, music becomes yours. We’re here for all of it.</p>
-          <p>Since 1998, our family shop has helped curious beginners, weekend strummers and lifelong players find the instrument that feels just right.</p>
+          <p>Since1983, our family shop has helped curious beginners, weekend strummers and lifelong players find the instrument that feels just right.</p>
           <a href="#visit" className="button button-outline">Come say hello <ArrowRight size={15} /></a>
           <span className="story-doodle">♪</span>
         </div>
@@ -532,7 +532,7 @@ export function Storefront() {
         <div className="footer-top">
           <Link href="/" className="brand footer-brand">
             <span className="brand-mark"><Music2 size={20} strokeWidth={2.4} /></span>
-            <span className="brand-name">new chandan<span>musicals</span></span>
+            <span className="brand-name">New Chandan<span>musicals</span></span>
           </Link>
           <p>Good instruments. Good people.<br />A little more music in your day.</p>
           <a href="#shop" className="footer-backtop">Back to the good stuff <ArrowUpRight size={15} /></a>

@@ -21,6 +21,9 @@ describe("order transitions", () => {
     ] as const;
     for (const [from, to] of path) expect(() => assertTransition(from, to)).not.toThrow();
     expect(() => assertTransition("REQUESTED", "CANCELLED")).not.toThrow();
+    expect(() => assertTransition("REVIEWING", "AWAITING_PAYMENT")).toThrow(
+      "Cannot move an order",
+    );
     expect(() => assertTransition("AWAITING_BUYER_CONFIRMATION", "PAYMENT_VERIFIED")).toThrow(
       "Cannot move an order",
     );

@@ -14,6 +14,7 @@ const headers = [
   "stockStatus",
   "active",
   "sortOrder",
+  "image",
 ];
 
 const row = [
@@ -66,6 +67,26 @@ describe("product spreadsheet imports", () => {
       priceMode: "QUOTE",
       stockStatus: "LIMITED",
       active: false,
+    });
+  });
+
+  it("maps an embedded JPEG or PNG picture in the Image column to its product row", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Products");
+    sheet.addRow(headers);
+    sheet.addRow(row);
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk0QAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const imageId = workbook.addImage({ base64: png.toString("base64"), extension: "png" });
+    sheet.addImage(imageId, { tl: { col: 11, row: 1 }, ext: { width: 60, height: 60 } });
+
+    const products = await parseProductImport(Buffer.from(await workbook.xlsx.writeBuffer()), "xlsx");
+    expect(products[0].image).toMatchObject({
+      extension: "png",
+      mimeType: "image/png",
+      buffer: png,
     });
   });
 

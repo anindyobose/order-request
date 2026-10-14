@@ -934,15 +934,29 @@ const resolvers: IResolvers<unknown, AuthContext> = {
           where: { orderNumber, userId: user.id },
         });
         if (!order) throw new GraphQLError("Request not found.", { extensions: { code: "NOT_FOUND" } });
-        assertTransition(order.status, OrderStatus.AWAITING_PAYMENT);
         if (order.finalAmount === null || order.termsConfirmedAt === null) {
           throw validationError("The shop has not confirmed final terms yet.");
+        }
+        if (
+          order.status !== OrderStatus.AWAITING_BUYER_CONFIRMATION &&
+          order.status !== OrderStatus.AWAITING_PAYMENT
+        ) {
+          throw new GraphQLError("These order terms can no longer be accepted.", {
+            extensions: { code: "INVALID_STATE_TRANSITION" },
+          });
+        }
+        if (order.termsBuyerAcceptedAt) {
+          throw validationError("You have already accepted these final terms.");
+        }
+        if (order.status === OrderStatus.AWAITING_BUYER_CONFIRMATION) {
+          assertTransition(order.status, OrderStatus.AWAITING_PAYMENT);
         }
         const updated = await tx.order.update({
           where: { id: order.id },
           data: {
-            status: OrderStatus.AWAITING_PAYMENT,
-            paymentStatus: PaymentStatus.PENDING,
+            ...(order.status === OrderStatus.AWAITING_BUYER_CONFIRMATION
+              ? { status: OrderStatus.AWAITING_PAYMENT, paymentStatus: PaymentStatus.PENDING }
+              : {}),
             termsBuyerAcceptedAt: new Date(),
           },
           include: orderInclude(),
@@ -960,8 +974,13 @@ const resolvers: IResolvers<unknown, AuthContext> = {
       const amount = parsePositiveMoney(args.amount, "Payment amount", false);
       return orderTransaction(async (tx) => {
         const order = await tx.order.findUnique({ where: { orderNumber: args.orderNumber } });
-        if (!order || order.status !== OrderStatus.AWAITING_PAYMENT || order.finalAmount === null) {
-          throw new GraphQLError("Payment can only be recorded for an order awaiting payment.", {
+        if (
+          !order ||
+          (order.status !== OrderStatus.AWAITING_PAYMENT &&
+            order.status !== OrderStatus.AWAITING_BUYER_CONFIRMATION) ||
+          order.finalAmount === null
+        ) {
+          throw new GraphQLError("Payment details can only be recorded after final terms are confirmed.", {
             extensions: { code: "INVALID_STATE_TRANSITION" },
           });
         }
@@ -971,7 +990,14 @@ const resolvers: IResolvers<unknown, AuthContext> = {
         });
         const balance = order.finalAmount - (recordedTotal._sum.amount ?? 0);
         if (amount > balance) throw validationError("The payment amount cannot exceed the remaining balance.");
-        return tx.paymentRecord.create({
+        if (order.status === OrderStatus.AWAITING_BUYER_CONFIRMATION) {
+          assertTransition(order.status, OrderStatus.AWAITING_PAYMENT);
+          await tx.order.update({
+            where: { id: order.id },
+            data: { status: OrderStatus.AWAITING_PAYMENT, paymentStatus: PaymentStatus.PENDING },
+          });
+        }
+        const payment = await tx.paymentRecord.create({
           data: {
             orderId: order.id,
             amount,
@@ -980,6 +1006,18 @@ const resolvers: IResolvers<unknown, AuthContext> = {
             recordedById: staff.id,
           },
         });
+        if (order.status === OrderStatus.AWAITING_BUYER_CONFIRMATION) {
+          await createOrderEvent(
+            tx,
+            order.id,
+            staff.id,
+            "PAYMENT_DETAILS_RECORDED_BY_STAFF",
+            OrderStatus.AWAITING_BUYER_CONFIRMATION,
+            OrderStatus.AWAITING_PAYMENT,
+            { paymentRecordId: payment.id, amount, method: args.method },
+          );
+        }
+        return payment;
       });
     },
     verifyPayment: async (

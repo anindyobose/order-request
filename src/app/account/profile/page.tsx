@@ -148,7 +148,7 @@ export default function AccountProfilePage() {
   return (
     <main className="account-page">
       <header className="workspace-header">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">new chandan<span>musicals</span></span></Link>
+        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
         <div className="account-header-actions"><Link href="/account/orders" className="workspace-back"><ArrowLeft size={15} /> My requests</Link><button className="account-signout" onClick={() => void signOut()}><LogOut size={13} /> Sign out</button></div>
       </header>
       <div className="account-content">

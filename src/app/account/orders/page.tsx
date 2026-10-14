@@ -94,7 +94,7 @@ export default function AccountOrdersPage() {
       <header className="workspace-header">
         <Link href="/" className="brand">
           <span className="brand-mark"><Music2 size={20} /></span>
-          <span className="brand-name">new chandan<span>musicals</span></span>
+          <span className="brand-name">New Chandan<span>Musicals</span></span>
         </Link>
         <div className="account-header-actions">
           {user && <Link href="/account/profile" className="workspace-back"><UserRound size={14} /> My profile</Link>}
@@ -157,7 +157,7 @@ export default function AccountOrdersPage() {
                     <div className="account-order-total"><span>{order.finalAmount === null ? "Indicative item total" : "Confirmed order total"}</span><strong>{formatPrice(total)}{hasQuote && order.finalAmount === null ? " +" : ""}</strong></div>
                     <OrderProgress status={order.status} />
                     {order.status === "REQUESTED" && <p className="order-next-step">Next up: our shop team will check availability and get in touch to agree the final details.</p>}
-                    {order.status === "AWAITING_BUYER_CONFIRMATION" && <p className="order-next-step">The shop has proposed final terms. <Link href={`/account/orders/${encodeURIComponent(order.orderNumber)}`}>Review and respond</Link>.</p>}
+                    {order.status === "AWAITING_BUYER_CONFIRMATION" && <p className="order-next-step">The shop has proposed final terms. Review and accept them, or wait for the shop to record payment details. <Link href={`/account/orders/${encodeURIComponent(order.orderNumber)}`}>Review and respond</Link>.</p>}
                     {order.shipments[0] && <div className="account-address"><PackageCheck size={15} /><span>{order.shipments[0].courier}{order.shipments[0].trackingNumber ? ` · Tracking ${order.shipments[0].trackingNumber}` : " · Tracking unavailable"}</span></div>}
                     {!order.shipments.length && <div className="account-address"><PackageCheck size={15} /><span>Delivery to {order.address.line1}, {order.address.city}, {order.address.state} {order.address.postalCode}</span></div>}
                   </article>

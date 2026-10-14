@@ -1,2 +1,1 @@
-sku,slug,name,description,category,brand,price,priceMode,stockStatus,active,sortOrder
-NCM-EXAMPLE-001,example-instrument,Example Instrument,Product description,Strings,Example Brand,12000,FIXED,IN_STOCK,true,0
+sku,slug,name,description,category,brand,price,priceMode,stockStatus,active,sortOrder,image

@@ -246,18 +246,21 @@ export default function AdminProductsPage() {
   const selected = products.find((product) => product.id === draft.id);
   return (
     <main className="admin-page">
-      <header className="admin-topbar"><Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">new chandan<span>musicals</span></span></Link><div className="admin-topbar-right"><Link href="/admin" className="workspace-back"><ArrowLeft size={15} /> Orders</Link><Link href="/admin/settings" className="workspace-back">Settings</Link></div></header>
+      <header className="admin-topbar"><Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link><div className="admin-topbar-right"><Link href="/admin" className="workspace-back"><ArrowLeft size={15} /> Orders</Link><Link href="/admin/settings" className="workspace-back">Settings</Link></div></header>
       <div className="admin-content">
         <div className="admin-page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> SHOP CATALOG</div><h1>Instruments, <em>well cared for.</em></h1><p>Create, update, publish or archive catalog products and their images.</p></div></div>
         {error && <p className="form-message error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}
         <section className="admin-orders-section product-import-section">
           <div className="admin-orders-heading">
-            <div><h2>Import products</h2><p>Upload an Excel workbook or CSV to add products and update matching SKUs.</p></div>
-            <a className="button button-outline" href="/product-import-template.csv" download><Download size={15} /> Download template</a>
+            <div><h2>Import products &amp; images</h2><p>Upload an Excel workbook or CSV to add products and update matching SKUs.</p></div>
+            <div className="product-template-links">
+              <a className="button button-outline" href="/product-import-template.xlsx" download><Download size={15} /> Excel template</a>
+              <a className="button button-outline" href="/product-import-template.csv" download><Download size={15} /> CSV template</a>
+            </div>
           </div>
-          <p className="account-help">Use the first worksheet and keep the template’s column names. Matching SKUs are updated; images and archived status are preserved. The whole file is checked before any changes are saved (up to 1,000 rows, 5 MB).</p>
+          <p className="account-help">Use the first worksheet and keep the template’s column names. To import a picture, embed one JPEG or PNG in that product’s row in the Image column. It replaces the main product image while keeping the rest of the gallery. CSV files cannot contain embedded pictures. Matching SKUs are updated, and the whole file is checked before any changes are saved (up to 1,000 rows, 5 MB).</p>
           <form className="request-form product-import-form" onSubmit={(event) => void importProducts(event)}>
-            <label>Excel workbook (.xlsx) or CSV<input name="file" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required /></label>
+            <label>Choose an Excel workbook (.xlsx) or CSV to upload<input name="file" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required /></label>
             <button className="button button-dark" disabled={busy}><Upload size={15} /> {busy ? "Importing…" : "Import products"}</button>
           </form>
         </section>
@@ -277,7 +280,7 @@ export default function AdminProductsPage() {
               <label className="check-field"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /> Publish in public catalog</label>
               <button className="button button-dark" disabled={busy}><Save size={15} /> {busy ? "Saving…" : "Save product"}</button>
             </form>
-            {draft.id && <div className="product-image-manager"><h3>Product images</h3>{selected?.images.map((image) => <div className="managed-image" key={image.id}><Image src={image.url} alt={image.altText} width={48} height={48} unoptimized /><span>{image.altText}</span><button aria-label={`Remove ${image.altText}`} disabled={busy} onClick={() => void removeImage(image.id)}><Trash2 size={14} /></button></div>)}<form className="request-form" onSubmit={(event) => void uploadImage(event)}><label>Upload JPEG, PNG or WebP (max 5 MB)<input name="file" type="file" accept="image/jpeg,image/png,image/webp" required /></label><button className="button button-outline" disabled={busy}><Upload size={14} /> Upload image</button></form><button className="button button-outline" disabled={busy || draft.id === "" || selected?.archived} onClick={() => void archiveProduct(draft.id)}>Archive product</button></div>}
+            {draft.id && <div className="product-image-manager"><h3>Product images</h3><p className="account-help">Upload images directly here, or include them in the Excel import above. Save a new product before uploading images.</p>{selected?.images.map((image) => <div className="managed-image" key={image.id}><Image src={image.url} alt={image.altText} width={48} height={48} unoptimized /><span>{image.altText}</span><button aria-label={`Remove ${image.altText}`} disabled={busy} onClick={() => void removeImage(image.id)}><Trash2 size={14} /></button></div>)}<form className="request-form" onSubmit={(event) => void uploadImage(event)}><label>Upload JPEG, PNG or WebP (max 5 MB)<input name="file" type="file" accept="image/jpeg,image/png,image/webp" required /></label><button className="button button-outline" disabled={busy}><Upload size={14} /> Upload image</button></form><button className="button button-outline" disabled={busy || draft.id === "" || selected?.archived} onClick={() => void archiveProduct(draft.id)}>Archive product</button></div>}
           </section>
         </div>
       </div>

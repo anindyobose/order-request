@@ -71,7 +71,7 @@ export function AuthForm({
       <header className="workspace-header auth-header">
         <Link href="/" className="brand">
           <span className="brand-mark"><Music2 size={20} /></span>
-          <span className="brand-name">new chandan<span>musicals</span></span>
+          <span className="brand-name">New Chandan<span>musicals</span></span>
         </Link>
         <Link href="/" className="workspace-back"><ArrowLeft size={15} /> Back to the shop</Link>
       </header>
@@ -214,7 +214,7 @@ function AuthScaffold({
   return (
     <main className="auth-page">
       <header className="workspace-header auth-header">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">new chandan<span>musicals</span></span></Link>
+        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
         <Link href="/" className="workspace-back"><ArrowLeft size={15} /> Back to the shop</Link>
       </header>
       <section className="auth-card">

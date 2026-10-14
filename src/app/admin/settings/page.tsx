@@ -129,7 +129,7 @@ export default function AdminSettingsPage() {
 
   return (
     <main className="admin-page">
-      <header className="admin-topbar"><Link href="/" className="brand"><span className="brand-mark"><Bell size={19} /></span><span className="brand-name">new chandan<span>musicals</span></span></Link><div className="admin-topbar-right"><Link href="/admin" className="workspace-back"><ArrowLeft size={15} /> Orders</Link><Link href="/admin/products" className="workspace-back">Products</Link></div></header>
+      <header className="admin-topbar"><Link href="/" className="brand"><span className="brand-mark"><Bell size={19} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link><div className="admin-topbar-right"><Link href="/admin" className="workspace-back"><ArrowLeft size={15} /> Orders</Link><Link href="/admin/products" className="workspace-back">Products</Link></div></header>
       <div className="admin-content">
         <div className="admin-page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> SHOP OPERATIONS</div><h1>Settings & <em>notices.</em></h1><p>Configure notification preferences and monitor their delivery status.</p></div></div>
         {error && <p className="form-message error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}

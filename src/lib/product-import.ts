@@ -14,7 +14,14 @@ export const PRODUCT_IMPORT_COLUMNS = [
   "stockStatus",
   "active",
   "sortOrder",
+  "image",
 ] as const;
+
+export type ImportedProductImage = {
+  buffer: Buffer;
+  extension: "jpg" | "png";
+  mimeType: "image/jpeg" | "image/png";
+};
 
 export type ImportedProduct = {
   sku: string;
@@ -28,6 +35,7 @@ export type ImportedProduct = {
   stockStatus: "IN_STOCK" | "LIMITED" | "OUT_OF_STOCK";
   active: boolean;
   sortOrder: number;
+  image?: ImportedProductImage;
 };
 
 export class ProductImportError extends Error {
@@ -127,6 +135,52 @@ export async function parseProductImport(
     throw new ProductImportError(`Missing required columns: ${missing.join(", ")}. Download the product import template.`);
   }
 
+  const imageColumn = columns.get(normalizeHeader("image"));
+  const embeddedImages = new Map<number, ImportedProductImage>();
+  if (format === "xlsx") {
+    for (const embedded of sheet.getImages()) {
+      const column = Math.floor(embedded.range.tl.col) + 1;
+      const rowNumber = Math.floor(embedded.range.tl.row) + 1;
+      if (!imageColumn || column !== imageColumn) {
+        throw new ProductImportError(`Row ${rowNumber}: place product pictures in the Image column.`);
+      }
+      if (rowNumber < 2 || rowNumber > sheet.rowCount) {
+        throw new ProductImportError("Place every embedded picture inside its product row in the Image column.");
+      }
+      if (embeddedImages.has(rowNumber)) {
+        throw new ProductImportError(`Row ${rowNumber}: add no more than one product image per row.`);
+      }
+      const imageId = Number(embedded.imageId);
+      if (!Number.isSafeInteger(imageId)) {
+        throw new ProductImportError(`Row ${rowNumber}: the embedded picture could not be read.`);
+      }
+      const image = workbook.getImage(imageId);
+      const buffer = image.buffer
+        ? Buffer.from(image.buffer)
+        : image.base64
+          ? Buffer.from(image.base64, "base64")
+          : null;
+      if (!buffer?.length) {
+        throw new ProductImportError(`Row ${rowNumber}: the embedded picture is empty or unreadable.`);
+      }
+      let extension: ImportedProductImage["extension"];
+      let mimeType: ImportedProductImage["mimeType"];
+      if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        extension = "jpg";
+        mimeType = "image/jpeg";
+      } else if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+        extension = "png";
+        mimeType = "image/png";
+      } else {
+        throw new ProductImportError(`Row ${rowNumber}: embedded pictures must be JPEG or PNG.`);
+      }
+      if (buffer.length > 5 * 1024 * 1024) {
+        throw new ProductImportError(`Row ${rowNumber}: each product image must be 5 MB or smaller.`);
+      }
+      embeddedImages.set(rowNumber, { buffer, extension, mimeType });
+    }
+  }
+
   const imported: ImportedProduct[] = [];
   const seenSkus = new Set<string>();
   const seenSlugs = new Set<string>();
@@ -139,6 +193,9 @@ export async function parseProductImport(
     try {
       for (const [header, column] of columns) {
         const value = cellText(row.getCell(column).value);
+        if (header === normalizeHeader("image") && value) {
+          throw new ProductImportError(`Row ${rowNumber}: add pictures as embedded images in the Image column, not as a URL or filename.`);
+        }
         values.set(header, value);
         if (value) hasValue = true;
       }
@@ -181,6 +238,7 @@ export async function parseProductImport(
         stockStatus: stockStatus as ImportedProduct["stockStatus"],
         active: parseBoolean(get("active"), rowNumber),
         sortOrder: parseInteger(get("sortOrder"), "sortOrder", rowNumber, 0),
+        ...(embeddedImages.has(rowNumber) ? { image: embeddedImages.get(rowNumber)! } : {}),
       });
     } catch (error) {
       if (!(error instanceof ProductImportError)) throw error;

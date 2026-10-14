@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  BellRing,
   Check,
   CircleAlert,
   Clock3,
@@ -11,10 +12,11 @@ import {
   PackageCheck,
   Search,
   Truck,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "@/components/auth-provider";
 import { graphqlRequest, ORDER_FIELDS, Order, OrderStatus } from "@/lib/api";
 import { formatPrice, statusLabel } from "@/lib/store";
@@ -42,6 +44,7 @@ type OrderEvent = {
 };
 
 type OrderConnection = { items: Order[]; total: number; hasNextPage: boolean };
+type NewRequest = { id: string; orderNumber: string };
 
 const statuses: OrderStatus[] = [
   "REQUESTED",
@@ -56,6 +59,8 @@ const statuses: OrderStatus[] = [
 ];
 
 const amount = (value: FormDataEntryValue | null) => Number(String(value ?? "").trim());
+const adminStatusLabel = (value: OrderStatus) =>
+  value === "AWAITING_BUYER_CONFIRMATION" ? "Awaiting buyer confirmation" : statusLabel(value);
 
 export default function AdminPage() {
   const router = useRouter();
@@ -74,6 +79,9 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [newRequests, setNewRequests] = useState<NewRequest[]>([]);
+  const [liveUpdateError, setLiveUpdateError] = useState(false);
+  const seenRequestIds = useRef<Set<string> | null>(null);
   const selected = orders.find((order) => order.orderNumber === selectedNumber) ?? null;
 
   const loadData = useCallback(async () => {
@@ -121,6 +129,49 @@ export default function AdminPage() {
     const timer = window.setTimeout(() => void loadData(), 250);
     return () => window.clearTimeout(timer);
   }, [loadData]);
+
+  useEffect(() => {
+    if (!user || !["ADMIN", "ORDER_OPERATOR"].includes(user.role)) return;
+    let active = true;
+    const checkForNewRequests = async () => {
+      try {
+        const result = await graphqlRequest<{ adminOrders: { items: NewRequest[] } }>(
+          `query LatestAdminRequests($page: PageInput) {
+            adminOrders(page: $page) { items { id orderNumber } total hasNextPage }
+          }`,
+          { page: { page: 1, pageSize: 20 } },
+        );
+        if (!active) return;
+        const latest = result.adminOrders.items;
+        const seen = seenRequestIds.current;
+        if (!seen) {
+          seenRequestIds.current = new Set(latest.map((order) => order.id));
+        } else {
+          const fresh = latest.filter((order) => !seen.has(order.id));
+          latest.forEach((order) => seen.add(order.id));
+          if (fresh.length) {
+            setNewRequests((current) => {
+              const combined = [...fresh, ...current];
+              return combined.filter((item, index) =>
+                combined.findIndex((candidate) => candidate.id === item.id) === index,
+              ).slice(0, 5);
+            });
+            void loadData();
+          }
+        }
+        setLiveUpdateError(false);
+      } catch (cause) {
+        console.error("Could not check for new shop requests.", cause);
+        if (active) setLiveUpdateError(true);
+      }
+    };
+    void checkForNewRequests();
+    const interval = window.setInterval(() => void checkForNewRequests(), 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [loadData, user]);
 
   const loadEvents = useCallback(async (orderNumber: string) => {
     if (!orderNumber) {
@@ -193,7 +244,7 @@ export default function AdminPage() {
           buyerMessage: String(form.get("buyerMessage") ?? "").trim() || null,
         },
       },
-      "Final terms sent to the buyer.",
+      "Final terms saved. Record payment details to continue, or let the buyer accept the terms from My Requests.",
     );
   }
 
@@ -211,7 +262,9 @@ export default function AdminPage() {
         method: String(form.get("method")),
         reference: String(form.get("reference") ?? "").trim() || null,
       },
-      "Payment recorded. Verify it separately after checking the funds.",
+      selected.status === "AWAITING_BUYER_CONFIRMATION"
+        ? "Payment details recorded and request moved to Awaiting payment. Verify the funds separately."
+        : "Payment recorded. Verify it separately after checking the funds.",
     );
     event.currentTarget.reset();
   }
@@ -243,6 +296,16 @@ export default function AdminPage() {
     }
   }
 
+  function reviewNewRequest(orderNumber: string) {
+    setStatus("");
+    setSearch("");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+    setSelectedNumber(orderNumber);
+    setNewRequests((current) => current.filter((request) => request.orderNumber !== orderNumber));
+  }
+
   if (sessionLoading) return <main className="admin-page"><div className="app-loading">Checking staff access…</div></main>;
   if (!user || !["ADMIN", "ORDER_OPERATOR"].includes(user.role)) {
     return (
@@ -263,11 +326,11 @@ export default function AdminPage() {
   return (
     <main className="admin-page">
       <header className="admin-topbar">
-        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">new chandan<span>musicals</span></span></Link>
+        <Link href="/" className="brand"><span className="brand-mark"><Music2 size={20} /></span><span className="brand-name">New Chandan<span>musicals</span></span></Link>
         <div className="admin-topbar-right">
           <span className="admin-workspace-label">SHOP WORKSPACE · {user.role === "ADMIN" ? "ADMIN" : "ORDER OPERATOR"}</span>
           <Link href="/" className="workspace-back"><ArrowLeft size={15} /> View storefront</Link>
-          {user.role === "ADMIN" && <Link href="/admin/products" className="workspace-back">Products</Link>}
+          {user.role === "ADMIN" && <Link href="/admin/products" className="workspace-back"><Upload size={14} /> Product imports</Link>}
           {user.role === "ADMIN" && <Link href="/admin/settings" className="workspace-back">Settings</Link>}
           <button className="account-signout" onClick={() => void signOut()}><LogOut size={13} /> Sign out</button>
         </div>
@@ -285,13 +348,20 @@ export default function AdminPage() {
         </section>}
         {error && <p className="form-message error" role="alert">{error}</p>}
         {message && <p className="form-message" role="status">{message}</p>}
+        {newRequests.length > 0 && <div className="live-request-notice" role="status" aria-live="polite">
+          <BellRing size={17} />
+          <div><strong>{newRequests.length === 1 ? "New customer request received" : `${newRequests.length} new customer requests received`}</strong><span>{newRequests.map((request) => request.orderNumber).join(", ")}</span></div>
+          <button className="button button-outline" onClick={() => reviewNewRequest(newRequests[0].orderNumber)}>Review request</button>
+          <button className="live-request-dismiss" aria-label="Dismiss new request notification" onClick={() => setNewRequests([])}>×</button>
+        </div>}
+        {liveUpdateError && <p className="form-message error" role="alert">Live updates could not reach the shop. The dashboard will retry automatically.</p>}
         <section className="admin-orders-section">
           <div className="admin-orders-heading">
             <div><h2>The request book</h2><p>All updates are saved to the shop database and audit history.</p></div>
             <label className="admin-search"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search requests or customers" aria-label="Search requests" /></label>
           </div>
           <div className="admin-filter-row">
-            <label>Status<select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+            <label>Status<select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{adminStatusLabel(value)}</option>)}</select></label>
             <label>From<input type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} /></label>
             <label>To<input type="date" value={toDate} onChange={(event) => { setToDate(event.target.value); setPage(1); }} /></label>
           </div>
@@ -301,7 +371,7 @@ export default function AdminPage() {
                 <button key={order.id} className={`admin-order-row ${selectedNumber === order.orderNumber ? "selected" : ""}`} onClick={() => setSelectedNumber(order.orderNumber)}>
                   <span className="admin-order-row-top"><strong>{order.orderNumber}</strong><span>{new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span></span>
                   <span className="admin-order-customer">{order.customer.name}</span>
-                  <span className="admin-order-row-bottom"><span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items · {formatPrice(order.finalAmount ?? order.subtotal)}{order.items.some((item) => item.priceMode === "QUOTE") && order.finalAmount === null ? "+" : ""}</span><span className={`admin-status status-${order.status.toLowerCase().replaceAll("_", "-")}`}>{statusLabel(order.status)}</span></span>
+                  <span className="admin-order-row-bottom"><span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items · {formatPrice(order.finalAmount ?? order.subtotal)}{order.items.some((item) => item.priceMode === "QUOTE") && order.finalAmount === null ? "+" : ""}</span><span className={`admin-status status-${order.status.toLowerCase().replaceAll("_", "-")}`}>{adminStatusLabel(order.status)}</span></span>
                 </button>
               )) : <div className="admin-list-empty"><PackageCheck size={22} /><strong>{busy ? "Loading requests…" : "No requests match."}</strong><span>Adjust your filters or check back later.</span></div>}
               <div className="catalog-pagination">
@@ -346,7 +416,8 @@ function OrderDetail({
   const [notes, setNotes] = useState(order.internalNotes ?? "");
 
   return <>
-    <div className="detail-heading"><div><span className="detail-kicker">REQUEST DETAILS</span><h3>{order.orderNumber}</h3></div><span className={`admin-status status-${order.status.toLowerCase().replaceAll("_", "-")}`}>{statusLabel(order.status)}</span></div>
+    <div className="detail-heading"><div><span className="detail-kicker">REQUEST DETAILS</span><h3>{order.orderNumber}</h3></div><span className={`admin-status status-${order.status.toLowerCase().replaceAll("_", "-")}`}>{adminStatusLabel(order.status)}</span></div>
+    {order.status === "AWAITING_BUYER_CONFIRMATION" && <div className="detail-block buyer-confirmation-notice"><span className="detail-label">NEXT STEP</span><p>The buyer can accept these terms in My Requests. If payment details are already available, record the amount, method, and transaction ID below to move the request to Awaiting payment. Recording details does not mark payment as verified.</p></div>}
     <div className="detail-block"><span className="detail-label">THE CUSTOMER</span><strong>{order.customer.name}</strong>{order.customer.phone && <a href={`tel:${order.customer.phone}`}>{order.customer.phone}</a>}{order.customer.email && <a href={`mailto:${order.customer.email}`}>{order.customer.email}</a>}<span>{order.address.recipientName} · {order.address.phone}<br />{order.address.line1}{order.address.line2 ? `, ${order.address.line2}` : ""}<br />{order.address.city}, {order.address.state} {order.address.postalCode}</span>{order.buyerNotes && <p>Buyer note: {order.buyerNotes}</p>}{order.termsMessage && <p>Message sent with final terms: {order.termsMessage}</p>}</div>
     <div className="detail-block"><span className="detail-label">THE INSTRUMENTS</span>{order.items.map((item) => <div className="detail-item" key={item.id}><span><strong>{item.quantity} ×</strong> {item.name}{item.agreedVariant ? ` · ${item.agreedVariant}` : ""}</span><strong>{item.agreedUnitPrice === null ? item.priceMode === "QUOTE" ? "Quote" : "To confirm" : formatPrice(item.quantity * item.agreedUnitPrice)}</strong></div>)}<div className="detail-total"><span>{order.finalAmount === null ? "Indicative item total" : "Confirmed total"}</span><strong>{formatPrice(order.finalAmount ?? order.subtotal)}</strong></div></div>
     {order.cancellationReason && <div className="detail-block"><span className="detail-label">CANCELLATION REASON</span><p>{order.cancellationReason}</p>{order.paymentStatus === "REFUND_PENDING" && <strong>Refund follow-up required</strong>}</div>}
@@ -354,13 +425,13 @@ function OrderDetail({
     {order.status === "REVIEWING" || order.status === "AWAITING_BUYER_CONFIRMATION" ? <form className="detail-block request-form" onSubmit={(event) => void onConfirmTerms(event)}><span className="detail-label">CONFIRM FINAL TERMS</span>{order.items.map((item) => <div key={item.id} className="terms-item"><strong>{item.name}</strong><div className="form-row"><label>Quantity<input name={`quantity-${item.id}`} type="number" min="1" max={item.requestedQuantity} defaultValue={item.quantity || item.requestedQuantity} required /></label><label>Unit price (₹)<input name={`price-${item.id}`} type="number" min="0" max="100000000" defaultValue={item.agreedUnitPrice ?? item.requestedUnitPrice ?? 0} required /></label></div><label>Variant / finish<input name={`variant-${item.id}`} defaultValue={item.agreedVariant ?? ""} maxLength={200} /></label></div>)}<div className="form-row"><label>Delivery fee (₹)<input name="deliveryFee" type="number" min="0" max="100000000" defaultValue={order.deliveryFee} required /></label><label>Discount (₹)<input name="discount" type="number" min="0" max="100000000" defaultValue={order.discount} required /></label></div><label>Message for the buyer<textarea name="buyerMessage" rows={2} maxLength={1000} /></label><button className="button button-dark" disabled={busy}>Send final terms</button></form> : null}
     <form className="detail-block request-form" onSubmit={(event) => void onSaveNotes(event)}><label className="detail-label" htmlFor={`staff-note-${order.id}`}>PRIVATE STAFF NOTES</label><textarea id={`staff-note-${order.id}`} name="notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={5000} placeholder="Call notes and follow-up…" /><button className="button button-outline" disabled={busy}>Save notes</button></form>
     <div className="detail-block payment-block"><span className="detail-label">PAYMENT · RECORD AND VERIFY SEPARATELY</span><span className="payment-status-value"><CreditCard size={15} />{order.paymentStatus.replaceAll("_", " ")}</span>{order.paymentRecords?.map((payment) => <div className="detail-item" key={payment.id}><span>{formatPrice(payment.amount)} · {payment.method.replaceAll("_", " ")}{payment.reference ? ` · ${payment.reference}` : ""}</span>{payment.verifiedAt ? <strong>Verified</strong> : <button className="verify-button" disabled={busy} onClick={() => void onMutate("mutation VerifyPayment($paymentRecordId: ID!) { verifyPayment(paymentRecordId: $paymentRecordId) { id } }", { paymentRecordId: payment.id }, "Payment verification recorded.")}><Check size={14} /> Verify</button>}</div>)}
-      {order.status === "AWAITING_PAYMENT" && <form className="request-form" onSubmit={(event) => void onRecordPayment(event)}><div className="form-row"><label>Amount received (₹)<input name="amount" type="number" min="1" max={order.finalAmount ?? undefined} required /></label><label>Method<select name="method"><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CASH">Cash</option><option value="CARD_OFFLINE">Card (offline)</option><option value="OTHER">Other</option></select></label></div><label>Reference (optional)<input name="reference" maxLength={200} /></label><button className="button button-outline" disabled={busy}>Record payment</button></form>}
+      {(order.status === "AWAITING_PAYMENT" || order.status === "AWAITING_BUYER_CONFIRMATION") && <form className="request-form" onSubmit={(event) => void onRecordPayment(event)}><div className="form-row"><label>Amount received (₹)<input name="amount" type="number" min="1" max={order.finalAmount ?? undefined} required /></label><label>Method<select name="method"><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CASH">Cash</option><option value="CARD_OFFLINE">Card (offline)</option><option value="OTHER">Other</option></select></label></div><label>Transaction ID / reference (optional)<input name="reference" maxLength={200} /></label><button className="button button-outline" disabled={busy}>{order.status === "AWAITING_BUYER_CONFIRMATION" ? "Record payment & continue" : "Record payment"}</button></form>}
     </div>
     {order.status === "PAYMENT_VERIFIED" && <button className="button button-dark" disabled={busy} onClick={() => void onMutate("mutation MarkReady($orderNumber: String!) { markReadyToDispatch(orderNumber: $orderNumber) { id } }", { orderNumber: order.orderNumber }, "Order is ready to dispatch.")}>Mark ready to dispatch</button>}
     {order.status === "READY_TO_DISPATCH" && <form className="detail-block request-form" onSubmit={(event) => void onDispatch(event)}><span className="detail-label">DISPATCH AND TRACKING</span><label>Courier<input name="courier" maxLength={100} required /></label><label>Tracking number<input name="trackingNumber" maxLength={200} /></label><label>Dispatch note<input name="notes" maxLength={1000} /></label><button className="button button-dark" disabled={busy}>Record dispatch</button></form>}
     {order.status === "DISPATCHED" && <><div className="detail-block"><span className="detail-label">SHIPMENTS</span>{order.shipments.map((shipment) => <p key={shipment.dispatchedAt}>{shipment.courier}{shipment.trackingNumber ? ` · ${shipment.trackingNumber}` : ""}</p>)}</div><button className="button button-dark" disabled={busy} onClick={() => void onMutate("mutation MarkDelivered($orderNumber: String!) { markDelivered(orderNumber: $orderNumber) { id } }", { orderNumber: order.orderNumber }, "Order marked as delivered.")}>Mark delivered</button></>}
     {order.status === "CANCELLED" && order.paymentStatus === "REFUND_PENDING" && <form className="detail-block request-form" onSubmit={(event) => { event.preventDefault(); const reference = String(new FormData(event.currentTarget).get("reference") ?? "").trim() || null; void onMutate("mutation MarkRefunded($orderNumber: String!, $reference: String) { markRefunded(orderNumber: $orderNumber, reference: $reference) { id } }", { orderNumber: order.orderNumber, reference }, "Refund completion recorded in the audit history."); }}><span className="detail-label">REFUND FOLLOW-UP</span><p>Reconcile the refund outside this app, then record completion here.</p><label>Refund reference (optional)<input name="reference" maxLength={200} /></label><button className="button button-outline" disabled={busy}>Mark refund completed</button></form>}
     {!["CANCELLED", "DELIVERED", "DISPATCHED"].includes(order.status) && <form className="detail-block request-form" onSubmit={(event) => { event.preventDefault(); const reason = String(new FormData(event.currentTarget).get("reason") ?? "").trim(); if (reason && window.confirm("Cancel this request? Any refund follow-up must be handled separately.")) void onMutate("mutation CancelOrder($orderNumber: String!, $reason: String!) { cancelOrder(orderNumber: $orderNumber, reason: $reason) { id } }", { orderNumber: order.orderNumber, reason }, "Request cancelled. Review any refund follow-up separately."); }}><span className="detail-label">CANCELLATION</span><label>Reason<input name="reason" maxLength={500} minLength={3} required /></label><button className="button button-outline" disabled={busy}>Cancel request</button></form>}
-    <div className="detail-block"><span className="detail-label">AUDIT HISTORY</span>{events.map((event) => <div className="detail-item" key={event.id}><span><strong>{event.action.replaceAll("_", " ")}</strong><br />{event.actorName ?? "System"} · {new Date(event.createdAt).toLocaleString()}{event.metadata ? <small>{JSON.stringify(event.metadata)}</small> : null}</span>{event.fromStatus && event.toStatus && <small>{statusLabel(event.fromStatus)} → {statusLabel(event.toStatus)}</small>}</div>)}</div>
+    <div className="detail-block"><span className="detail-label">AUDIT HISTORY</span>{events.map((event) => <div className="detail-item" key={event.id}><span><strong>{event.action.replaceAll("_", " ")}</strong><br />{event.actorName ?? "System"} · {new Date(event.createdAt).toLocaleString()}{event.metadata ? <small>{JSON.stringify(event.metadata)}</small> : null}</span>{event.fromStatus && event.toStatus && <small>{adminStatusLabel(event.fromStatus)} → {adminStatusLabel(event.toStatus)}</small>}</div>)}</div>
   </>;
 }
