@@ -37,6 +37,9 @@ yarn-error.log*
 # local product images and backup output
 /public/uploads/
 /backups/
+/deploy/aws.env
+/deploy/aws.secrets.env
+/.aws-deploy/
 
 # vercel
 .vercel

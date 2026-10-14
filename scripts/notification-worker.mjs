@@ -1,19 +1,21 @@
 import nextEnv from "@next/env";
+import { connectWithRetry } from "./db-config.mjs";
 import {
   NotificationChannel,
   NotificationStatus,
-  PrismaClient,
 } from "@prisma/client";
 import { createDecipheriv, createHash } from "node:crypto";
 import nodemailer from "nodemailer";
 
 nextEnv.loadEnvConfig(process.cwd());
-
-const db = new PrismaClient({ log: ["error"] });
+const { createPrismaClient } = await import("./prisma-client.mjs");
+const db = createPrismaClient();
 const MAX_ATTEMPTS = 6;
 const POLL_INTERVAL_MS = 3000;
 const STALE_CLAIM_MS = 5 * 60 * 1000;
 let stopping = false;
+let runPromise;
+let shutdownPromise;
 let transporter;
 
 class PermanentDeliveryError extends Error {}
@@ -273,15 +275,42 @@ async function run() {
 }
 
 async function shutdown() {
-  if (stopping) return;
+  if (shutdownPromise) return shutdownPromise;
   stopping = true;
-  await db.$disconnect();
+  shutdownPromise = (async () => {
+    if (runPromise) await runPromise;
+    transporter?.close();
+    await db.$disconnect();
+    console.log("Notification worker stopped cleanly.");
+  })();
+  return shutdownPromise;
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
-run().catch(async (error) => {
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    void shutdown().catch((error) => {
+      console.error("Notification worker shutdown failed.", sanitizeError(error));
+      process.exitCode = 1;
+    });
+  });
+}
+
+async function main() {
+  await connectWithRetry(() => db.$connect(), {
+    onRetry: (attempt, delayMs) => {
+      console.warn(`Database is not ready; retrying worker startup (attempt ${attempt}) in ${delayMs}ms.`);
+    },
+  });
+  if (stopping) {
+    await shutdown();
+    return;
+  }
+  runPromise = run();
+  await runPromise;
+}
+
+main().catch(async (error) => {
   console.error("Notification worker could not start.", sanitizeError(error));
-  await db.$disconnect();
   process.exitCode = 1;
+  await shutdown();
 });

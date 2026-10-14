@@ -5,10 +5,11 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import nextEnv from "@next/env";
+import { createDatabaseUrl } from "./db-config.mjs";
 
 nextEnv.loadEnvConfig(process.cwd());
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = createDatabaseUrl();
 const backupDirectory = process.env.NCM_BACKUP_DIRECTORY;
 const offsiteDirectory = process.env.NCM_OFFSITE_BACKUP_DIRECTORY;
 

@@ -66,7 +66,11 @@ docker compose up --build -d
 docker compose run --rm web npm run db:seed
 ```
 
-The `web` container deploys migrations before starting Next.js. The separate `worker` container processes notification jobs. PostgreSQL data and uploaded product images use named volumes. Back up volumes and the database independently; for multi-instance production hosting, configure durable shared/object storage for uploads instead of relying on a container-local filesystem.
+Compose applies migrations once through a one-shot `migrate` service before starting the web app and worker. The production image targets use separate Dockerfile commands; the worker has no published port. PostgreSQL data and uploaded product images use named volumes. Back up volumes and the database independently; for multi-instance production hosting, configure durable shared/object storage for uploads instead of relying on a container-local filesystem.
+
+## AWS deployment preparation
+
+The repository includes production `web` and `worker` Docker targets, a database-independent `/health` endpoint, verified Aurora TLS support, retrying startup/migrations, and graceful shutdown. See [deploy/AWS-DEPLOY.md](./deploy/AWS-DEPLOY.md) for the audit, environment setup, exact deployment steps, and operational caveats. The supplied deploy script is at `deploy/deploy-aws.sh`; it has not been run.
 
 ## Accounts, notifications, and operations
 

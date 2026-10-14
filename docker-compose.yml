@@ -16,41 +16,60 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
 
-  web:
-    build: .
-    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      target: web
+    restart: "no"
     env_file: .env
-    environment:
+    environment: &app-environment
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env to use host db}
-    command: ["sh", "-c", "npm run db:deploy && npm run start"]
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      DB_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      DB_SSL: "false"
     depends_on:
       db:
         condition: service_healthy
+    command: ["npm", "run", "migrate"]
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *app-environment
+      PORT: ${PORT:-3000}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
-      - "3000:3000"
+      - "3000:${PORT:-3000}"
     volumes:
       - product_uploads:/app/public/uploads
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 45s
+      start_period: 60s
 
   worker:
-    build: .
+    build:
+      context: .
+      target: worker
     restart: unless-stopped
     env_file: .env
     environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env to use host db}
-    command: ["npm", "run", "worker"]
+      <<: *app-environment
     depends_on:
-      db:
-        condition: service_healthy
-      web:
-        condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

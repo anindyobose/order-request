@@ -1,14 +1,43 @@
-FROM node:24-bookworm-slim
-
+FROM node:24-bookworm-slim AS dependencies
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
-RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
-COPY . .
-RUN npx prisma generate && npm run build
-RUN mkdir -p public/uploads .next/cache && chown -R node:node public/uploads .next
 
+FROM dependencies AS builder
+COPY . .
+RUN npx prisma generate \
+    && DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build?schema=public npm run build
+
+FROM node:24-bookworm-slim AS production
+WORKDIR /app
 ENV NODE_ENV=production
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl openssl \
+    && curl --fail --silent --show-error --location \
+      https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+      --output /etc/ssl/certs/rds-global-bundle.pem \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev \
+    && npx prisma generate \
+    && npm cache clean --force
+COPY scripts ./scripts
+
+FROM production AS web
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY next.config.ts tsconfig.json ./
+RUN mkdir -p public/uploads .next/cache \
+    && chown -R node:node public .next
 EXPOSE 3000
 USER node
-CMD ["sh", "-c", "npm run db:deploy && npm run start"]
+CMD ["node", "scripts/web-server.mjs"]
+
+FROM production AS worker
+USER node
+CMD ["node", "scripts/notification-worker.mjs"]

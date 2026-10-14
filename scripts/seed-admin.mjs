@@ -1,7 +1,8 @@
 import nextEnv from "@next/env";
-import { PrismaClient, Role } from "@prisma/client";
+import { Role } from "@prisma/client";
 import { hash } from "bcryptjs";
 import catalog from "../prisma/catalog.seed.json" with { type: "json" };
+import { createPrismaClient } from "./prisma-client.mjs";
 
 nextEnv.loadEnvConfig(process.cwd());
 
@@ -23,7 +24,7 @@ if (
   throw new Error("Set ADMIN_PASSWORD to a unique 12+ character password with upper, lower and numeric characters.");
 }
 
-const db = new PrismaClient();
+const db = createPrismaClient();
 try {
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) {

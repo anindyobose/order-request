@@ -1,13 +1,11 @@
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient } from "../../scripts/prisma-client.mjs";
 
 const globalForPrisma = globalThis as typeof globalThis & {
-  ncmPrisma?: PrismaClient;
+  ncmPrisma?: ReturnType<typeof createPrismaClient>;
 };
 
 export const prisma =
   globalForPrisma.ncmPrisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-  });
+  createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.ncmPrisma = prisma;
