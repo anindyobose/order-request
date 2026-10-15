@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { graphqlRequest, PRODUCT_FIELDS, CatalogProduct } from "@/lib/api";
 import { updateCart, useCart } from "@/lib/cart-store";
 import { formatPrice } from "@/lib/store";
+import { getDiscountPercent } from "@/lib/product-pricing";
 
 const availability: Record<CatalogProduct["stockStatus"], string> = {
   IN_STOCK: "In stock",
@@ -70,7 +71,7 @@ function ProductDetailsContent() {
             <div className="eyebrow"><span className="eyebrow-line" /> {product.category}</div>
             <h1>{product.name}</h1>
             <p className="product-detail-brand">{product.brand ?? "New Chandan Musicals"}</p>
-            <p className="product-detail-price">{product.priceMode === "QUOTE" ? "Request a quote" : formatPrice(product.price)}</p>
+            <p className="product-detail-price">{product.priceMode === "QUOTE" ? "Request a quote" : <><span className="product-price-current">{formatPrice(product.price)}</span>{product.offerPrice !== null && product.mrp !== null && getDiscountPercent(product.mrp, product.offerPrice) !== null && <><s className="product-price-mrp">{formatPrice(product.mrp)}</s><strong className="product-price-discount">{getDiscountPercent(product.mrp, product.offerPrice)}% off</strong></>}</>}</p>
             <p className="product-detail-stock"><i className={product.stockStatus === "OUT_OF_STOCK" ? "stock-out" : ""} />{availability[product.stockStatus]}</p>
             <p className="product-detail-description">{product.description}</p>
             <div className="product-detail-actions">

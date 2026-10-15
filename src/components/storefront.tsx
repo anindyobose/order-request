@@ -25,6 +25,7 @@ import { formatPrice } from "@/lib/store";
 import { updateCart, useCart } from "@/lib/cart-store";
 import { useSession } from "@/components/auth-provider";
 import { AppHeader } from "@/components/app-header";
+import { getDiscountPercent } from "@/lib/product-pricing";
 import { Address, CatalogProduct, graphqlRequest, PRODUCT_FIELDS } from "@/lib/api";
 
 const categoryDesign: Record<string, { icon: string; color: string }> = {
@@ -433,7 +434,7 @@ export function Storefront() {
                       <div className="product-overline"><span>{product.category}</span><span className="stock-indicator"><i className={product.stockStatus === "OUT_OF_STOCK" ? "stock-out" : ""} />{stockLabel[product.stockStatus]}</span></div>
                       <h3><Link href={`/products/${encodeURIComponent(product.slug)}`}>{product.name}</Link></h3>
                       <div className="product-bottom">
-                        <div><span className="maker-name">{product.brand ?? "New Chandan Musicals"}</span><p className="product-price">{product.priceMode === "QUOTE" ? "Request a quote" : formatPrice(product.price)}</p></div>
+                        <div><span className="maker-name">{product.brand ?? "New Chandan Musicals"}</span><p className="product-price">{product.priceMode === "QUOTE" ? "Request a quote" : <><span className="product-price-current">{formatPrice(product.price)}</span>{product.offerPrice !== null && product.mrp !== null && getDiscountPercent(product.mrp, product.offerPrice) !== null && <><s className="product-price-mrp">{formatPrice(product.mrp)}</s><strong className="product-price-discount">{getDiscountPercent(product.mrp, product.offerPrice)}% off</strong></>}</>}</p></div>
                         <button
                           className="add-button"
                           onClick={() => addToCart(product.id)}

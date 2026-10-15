@@ -427,6 +427,13 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .product-bottom { display: flex; align-items: end; justify-content: space-between; }
 .maker-name { color: #92948b; font-size: 8px; }
 .product-price { margin: 3px 0 0; color: #4e6356; font-size: 10px; font-weight: 600; }
+.product-price-current { color: #315c46; font-weight: 700; }
+.product-price-mrp { margin-left: 6px; color: #92948b; font-size: .9em; font-weight: 400; }
+.product-price-discount { margin-left: 6px; color: #b76146; font-size: .78em; font-family: var(--sans); font-weight: 700; white-space: nowrap; }
+.admin-product-prices { display: inline-flex; align-items: center; gap: 6px; }
+.admin-product-prices s { color: #92948b; font-size: .9em; font-weight: 400; }
+.admin-product-prices strong { color: #b76146; font-size: .85em; }
+.product-discount-preview { display: flex; align-items: center; padding-top: 16px; color: #b76146; font-size: 12px; font-weight: 700; }
 .add-button {
   width: 30px;
   height: 30px;
@@ -775,6 +782,8 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .product-detail-copy h1 { margin: 14px 0 7px; color: var(--ink); font-family: var(--serif); font-size: clamp(38px, 5vw, 58px); font-weight: 400; letter-spacing: -.05em; line-height: 1.03; }
 .product-detail-brand { margin: 0; color: #7d8479; font-size: 11px; }
 .product-detail-price { margin: 22px 0 8px; color: #526557; font-family: var(--serif); font-size: 24px; }
+.product-detail-price .product-price-mrp { font-family: var(--sans); font-size: 14px; }
+.product-detail-price .product-price-discount { font-size: 12px; }
 .product-detail-stock { display: flex; align-items: center; gap: 7px; color: #7e887e; font-size: 9px; }
 .product-detail-stock i { width: 7px; height: 7px; border-radius: 50%; background: #6d946c; }
 .product-detail-stock i.stock-out { background: #c17a5c; }

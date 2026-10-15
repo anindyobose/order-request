@@ -81,10 +81,30 @@ export async function POST(request: Request) {
     const products = await parseProductImport(bytes, extension);
     const skuList = products.map((product) => product.sku);
     const slugList = products.map((product) => product.slug);
-    const [existingSkus, existingSlugs] = await Promise.all([
+    const [existingProducts, existingSlugs] = await Promise.all([
       prisma.product.findMany({
         where: { sku: { in: skuList } },
-        select: { sku: true },
+        select: {
+          sku: true,
+          slug: true,
+          name: true,
+          description: true,
+          category: true,
+          brand: true,
+          price: true,
+          mrp: true,
+          offerPrice: true,
+          priceMode: true,
+          stockStatus: true,
+          active: true,
+          archived: true,
+          sortOrder: true,
+          images: {
+            select: { url: true },
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            take: 1,
+          },
+        },
       }),
       prisma.product.findMany({
         where: { slug: { in: slugList } },
@@ -102,21 +122,69 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingSkuSet = new Set(existingSkus.map((product) => product.sku));
+    const existingBySku = new Map(existingProducts.map((product) => [product.sku, product]));
+    for (const product of products) {
+      if (
+        product.imageReference &&
+        !product.image &&
+        existingBySku.get(product.sku)?.images[0]?.url !== product.imageReference
+      ) {
+        return errorResponse(
+          `Row for SKU "${product.sku}": the image reference is informational. To change the image, embed a JPEG or PNG in the Image column.`,
+          400,
+        );
+      }
+    }
+    const unchangedProducts = products.filter((product) => {
+      const existing = existingBySku.get(product.sku);
+      return existing &&
+        !product.image &&
+        existing.slug === product.slug &&
+        existing.name === product.name &&
+        existing.description === product.description &&
+        existing.category === product.category &&
+        existing.brand === product.brand &&
+        existing.price === product.price &&
+        existing.mrp === product.mrp &&
+        existing.offerPrice === product.offerPrice &&
+        existing.priceMode === product.priceMode &&
+        existing.stockStatus === product.stockStatus &&
+        existing.active === product.active &&
+        (product.archived === undefined || existing.archived === product.archived) &&
+        existing.sortOrder === product.sortOrder;
+    });
+    const unchangedSkus = new Set(unchangedProducts.map((product) => product.sku));
+    const productsToSave = products.filter((product) => !unchangedSkus.has(product.sku));
     const imageUrls = new Map<string, string>();
     try {
-      for (const product of products) {
+      for (const product of productsToSave) {
         if (!product.image) continue;
         const filename = `${randomUUID()}.${product.image.extension}`;
         imageUrls.set(product.sku, `/uploads/${filename}`);
       }
 
       await prisma.$transaction(async (tx) => {
-        for (const product of products) {
-          const { image, ...productData } = product;
+        for (const product of productsToSave) {
+          const { image } = product;
           if (image && !imageUrls.has(product.sku)) {
             throw new Error(`Image for product ${product.sku} was not saved before the database update.`);
           }
+          const productData = {
+            sku: product.sku,
+            slug: product.slug,
+            name: product.name,
+            description: product.description,
+            category: product.category,
+            brand: product.brand,
+            price: product.price,
+            mrp: product.mrp,
+            offerPrice: product.offerPrice,
+            priceMode: product.priceMode,
+            stockStatus: product.stockStatus,
+            active: product.active,
+            sortOrder: product.sortOrder,
+            ...(product.archived !== undefined ? { archived: product.archived } : {}),
+          };
           await tx.product.upsert({
             where: { sku: product.sku },
             create: productData,
@@ -162,11 +230,13 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const updated = products.filter((product) => existingSkuSet.has(product.sku)).length;
+    const created = products.filter((product) => !existingBySku.has(product.sku)).length;
+    const updated = productsToSave.length - created;
     return NextResponse.json({
-      created: products.length - updated,
+      created,
       updated,
       total: products.length,
+      unchanged: unchangedProducts.length,
     });
   } catch (error) {
     if (error instanceof ProductImportError) return errorResponse(error.message, 400);

@@ -69,6 +69,8 @@ export type CatalogProduct = {
   category: string;
   brand: string | null;
   price: number;
+  mrp: number | null;
+  offerPrice: number | null;
   priceMode: "FIXED" | "QUOTE";
   stockStatus: "IN_STOCK" | "LIMITED" | "OUT_OF_STOCK";
   active: boolean;
@@ -149,7 +151,7 @@ export type Order = {
 };
 
 export const PRODUCT_FIELDS = `
-  id sku slug name description category brand price priceMode stockStatus active archived sortOrder
+  id sku slug name description category brand price mrp offerPrice priceMode stockStatus active archived sortOrder
   images { id url altText sortOrder }
 `;
 

@@ -61,7 +61,7 @@ const typeDefs = /* GraphQL */ `
   type ProductImage { id: ID!, url: String!, altText: String!, sortOrder: Int! }
   type Product {
     id: ID!, sku: String!, slug: String!, name: String!, description: String!
-    category: String!, brand: String, price: Int!, priceMode: PriceMode!
+    category: String!, brand: String, price: Int!, mrp: Int, offerPrice: Int, priceMode: PriceMode!
     stockStatus: StockStatus!, active: Boolean!, archived: Boolean!, sortOrder: Int!
     images: [ProductImage!]!, createdAt: DateTime!, updatedAt: DateTime!
   }
@@ -148,7 +148,7 @@ const typeDefs = /* GraphQL */ `
   }
   input ProductInput {
     id: ID, sku: String!, slug: String!, name: String!, description: String!
-    category: String!, brand: String, price: Int!, priceMode: PriceMode!
+    category: String!, brand: String, price: Int!, mrp: Int, offerPrice: Int, priceMode: PriceMode!
     stockStatus: StockStatus!, active: Boolean!, sortOrder: Int!
   }
   input ProductImageInput { url: String!, altText: String!, sortOrder: Int! }
@@ -366,6 +366,13 @@ async function orderTransaction<T>(
 const resolvers: IResolvers<unknown, AuthContext> = {
   DateTime: dateTimeScalar,
   JSON: jsonScalar,
+  Product: {
+    mrp: (product: { mrp?: number | null; price: number; priceMode: PriceMode }) =>
+      product.priceMode === PriceMode.FIXED
+        ? product.mrp ?? (product.price > 0 ? product.price : null)
+        : null,
+    offerPrice: (product: { offerPrice?: number | null }) => product.offerPrice ?? null,
+  },
   Query: {
     me: (_: unknown, __: unknown, ctx: AuthContext) => ctx.user,
     adminUsers: async (_: unknown, { search }: { search?: string }, ctx: AuthContext) => {
@@ -1321,12 +1328,22 @@ const resolvers: IResolvers<unknown, AuthContext> = {
       _: unknown,
       { input }: { input: {
         id?: string | null; sku: string; slug: string; name: string; description: string;
-        category: string; brand?: string | null; price: number; priceMode: PriceMode;
+        category: string; brand?: string | null; price: number; mrp?: number | null;
+        offerPrice?: number | null; priceMode: PriceMode;
         stockStatus: StockStatus; active: boolean; sortOrder: number;
       } },
       ctx: AuthContext,
     ) => {
       requireRole(ctx.user, adminRoles);
+      const mrp = input.priceMode === PriceMode.FIXED
+        ? parsePositiveMoney(input.mrp ?? input.price, "MRP", false)
+        : null;
+      const offerPrice = input.priceMode === PriceMode.FIXED && input.offerPrice != null
+        ? parsePositiveMoney(input.offerPrice, "Offer price", false)
+        : null;
+      if (mrp !== null && offerPrice !== null && offerPrice >= mrp) {
+        throw validationError("Offer price must be lower than MRP.");
+      }
       const data = {
         sku: requireText(input.sku, "SKU", 80),
         slug: requireText(input.slug, "Slug", 120).toLowerCase(),
@@ -1334,7 +1351,9 @@ const resolvers: IResolvers<unknown, AuthContext> = {
         description: requireText(input.description, "Description", 5000),
         category: requireText(input.category, "Category", 100),
         brand: input.brand?.trim().slice(0, 100) || null,
-        price: parsePositiveMoney(input.price, "Price"),
+        price: input.priceMode === PriceMode.FIXED ? offerPrice ?? mrp! : 0,
+        mrp,
+        offerPrice,
         priceMode: input.priceMode,
         stockStatus: input.stockStatus,
         active: input.active,
@@ -1342,9 +1361,6 @@ const resolvers: IResolvers<unknown, AuthContext> = {
       };
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(data.slug)) {
         throw validationError("Use a lowercase URL slug with letters, numbers and hyphens.");
-      }
-      if (data.priceMode === PriceMode.FIXED && data.price <= 0) {
-        throw validationError("Fixed-price products need a price greater than zero.");
       }
       try {
         return input.id

@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { Readable } from "node:stream";
+import { getDiscountPercent } from "./product-pricing";
 
 export const PRODUCT_IMPORT_MAX_ROWS = 1000;
 export const PRODUCT_IMPORT_COLUMNS = [
@@ -9,12 +10,34 @@ export const PRODUCT_IMPORT_COLUMNS = [
   "description",
   "category",
   "brand",
+  "mrp",
+  "offerPrice",
+  "discountPercent",
   "price",
   "priceMode",
   "stockStatus",
   "active",
+  "archived",
   "sortOrder",
   "image",
+] as const;
+
+const PRODUCT_IMPORT_HEADERS = [
+  "SKU",
+  "Slug",
+  "Name",
+  "Description",
+  "Category",
+  "Brand",
+  "MRP",
+  "Offer Price",
+  "Discount Percent",
+  "Price Mode",
+  "Stock Status",
+  "Active",
+  "Archived",
+  "Sort Order",
+  "Image",
 ] as const;
 
 export type ImportedProductImage = {
@@ -31,12 +54,93 @@ export type ImportedProduct = {
   category: string;
   brand: string | null;
   price: number;
+  mrp: number | null;
+  offerPrice: number | null;
   priceMode: "FIXED" | "QUOTE";
   stockStatus: "IN_STOCK" | "LIMITED" | "OUT_OF_STOCK";
   active: boolean;
+  archived?: boolean;
   sortOrder: number;
+  imageReference?: string;
   image?: ImportedProductImage;
 };
+
+export type ProductImportTemplateProduct = {
+  sku: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  brand: string | null;
+  price: number;
+  mrp: number | null;
+  offerPrice: number | null;
+  priceMode: "FIXED" | "QUOTE";
+  stockStatus: "IN_STOCK" | "LIMITED" | "OUT_OF_STOCK";
+  active: boolean;
+  archived: boolean;
+  sortOrder: number;
+  images: Array<{ url: string }>;
+};
+
+export async function createProductImportTemplate(
+  products: ProductImportTemplateProduct[],
+  format: "csv" | "xlsx",
+) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "New Chandan Musicals";
+  workbook.subject = "Current product catalog; omitted products are never deleted";
+  const sheet = workbook.addWorksheet("Products");
+  sheet.addRow([...PRODUCT_IMPORT_HEADERS]);
+  for (const product of products) {
+    sheet.addRow([
+      product.sku,
+      product.slug,
+      product.name,
+      product.description,
+      product.category,
+      product.brand ?? "",
+      product.priceMode === "FIXED" ? product.mrp ?? product.price : "",
+      product.offerPrice ?? "",
+      getDiscountPercent(product.mrp ?? product.price, product.offerPrice) ?? "",
+      product.priceMode,
+      product.stockStatus,
+      product.active,
+      product.archived,
+      product.sortOrder,
+      product.images[0]?.url ?? "",
+    ]);
+  }
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + PRODUCT_IMPORT_HEADERS.length)}${Math.max(products.length + 1, 1)}` };
+  sheet.columns = [
+    { width: 20 },
+    { width: 30 },
+    { width: 34 },
+    { width: 56 },
+    { width: 22 },
+    { width: 22 },
+    { width: 14 },
+    { width: 16 },
+    { width: 20 },
+    { width: 20 },
+    { width: 12 },
+    { width: 12 },
+    { width: 14 },
+    { width: 14 },
+    { width: 38 },
+  ];
+  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF25483B" } };
+  sheet.getCell(1, 9).note = "Calculated from MRP and Offer Price. This value is informational.";
+  sheet.getCell(1, 15).note = "Image reference is informational. To replace the image, embed a JPEG or PNG in this cell's product row.";
+  sheet.getColumn(7).numFmt = '"₹"#,##0';
+  sheet.getColumn(8).numFmt = '"₹"#,##0';
+  sheet.getColumn(9).numFmt = '0"%"';
+
+  if (format === "csv") return Buffer.from(await workbook.csv.writeBuffer());
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
 
 export class ProductImportError extends Error {
   constructor(message: string) {
@@ -129,7 +233,7 @@ export async function parseProductImport(
     columns.set(header, column);
   }
 
-  const requiredColumns = ["sku", "slug", "name", "description", "category", "price", "priceMode", "stockStatus", "active"];
+  const requiredColumns = ["sku", "slug", "name", "description", "category", "priceMode", "stockStatus", "active"];
   const missing = requiredColumns.filter((header) => !columns.has(normalizeHeader(header)));
   if (missing.length) {
     throw new ProductImportError(`Missing required columns: ${missing.join(", ")}. Download the product import template.`);
@@ -193,9 +297,6 @@ export async function parseProductImport(
     try {
       for (const [header, column] of columns) {
         const value = cellText(row.getCell(column).value);
-        if (header === normalizeHeader("image") && value) {
-          throw new ProductImportError(`Row ${rowNumber}: add pictures as embedded images in the Image column, not as a URL or filename.`);
-        }
         values.set(header, value);
         if (value) hasValue = true;
       }
@@ -226,6 +327,29 @@ export async function parseProductImport(
         throw new ProductImportError(`Row ${rowNumber}: stockStatus must be IN_STOCK, LIMITED, or OUT_OF_STOCK.`);
       }
 
+      const legacyPrice = get("price")
+        ? parseInteger(get("price"), "price", rowNumber)
+        : null;
+      let mrp: number | null = null;
+      let offerPrice: number | null = null;
+      if (priceMode === "FIXED") {
+        const rawMrp = columns.has(normalizeHeader("mrp")) ? get("mrp") : "";
+        mrp = rawMrp
+          ? parseInteger(rawMrp, "mrp", rowNumber)
+          : legacyPrice;
+        if (mrp === null || mrp <= 0) {
+          throw new ProductImportError(`Row ${rowNumber}: MRP is required and must be greater than zero for fixed-price products.`);
+        }
+        if (get("offerPrice")) {
+          offerPrice = parseInteger(get("offerPrice"), "offerPrice", rowNumber);
+          if (offerPrice <= 0 || offerPrice >= mrp) {
+            throw new ProductImportError(`Row ${rowNumber}: offerPrice must be greater than zero and lower than MRP.`);
+          }
+        }
+      } else if (get("mrp") || get("offerPrice")) {
+        throw new ProductImportError(`Row ${rowNumber}: leave MRP and Offer Price blank for quote products.`);
+      }
+      const imageReference = get("image");
       imported.push({
         sku,
         slug,
@@ -233,11 +357,17 @@ export async function parseProductImport(
         description,
         category,
         brand: brand || null,
-        price: parseInteger(get("price"), "price", rowNumber),
+        price: priceMode === "FIXED" ? offerPrice ?? mrp! : legacyPrice ?? 0,
+        mrp,
+        offerPrice,
         priceMode,
         stockStatus: stockStatus as ImportedProduct["stockStatus"],
         active: parseBoolean(get("active"), rowNumber),
+        ...(columns.has(normalizeHeader("archived")) && get("archived")
+          ? { archived: parseBoolean(get("archived"), rowNumber) }
+          : columns.has(normalizeHeader("archived")) ? { archived: false } : {}),
         sortOrder: parseInteger(get("sortOrder"), "sortOrder", rowNumber, 0),
+        ...(imageReference ? { imageReference } : {}),
         ...(embeddedImages.has(rowNumber) ? { image: embeddedImages.get(rowNumber)! } : {}),
       });
     } catch (error) {

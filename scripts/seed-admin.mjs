@@ -55,7 +55,11 @@ try {
   for (const { image, altText, ...product } of catalog) {
     const savedProduct = await db.product.upsert({
       where: { sku: product.sku },
-      create: product,
+      create: {
+        ...product,
+        mrp: product.priceMode === "FIXED" ? product.price : null,
+        offerPrice: null,
+      },
       update: {
         slug: product.slug,
         name: product.name,
@@ -63,6 +67,8 @@ try {
         category: product.category,
         brand: product.brand,
         price: product.price,
+        mrp: product.priceMode === "FIXED" ? product.price : null,
+        offerPrice: null,
         priceMode: product.priceMode,
         stockStatus: product.stockStatus,
         sortOrder: product.sortOrder,

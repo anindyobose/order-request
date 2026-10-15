@@ -7,6 +7,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/auth-provider";
 import { AppHeader } from "@/components/app-header";
 import { CatalogProduct, graphqlRequest, PRODUCT_FIELDS } from "@/lib/api";
+import { getDiscountPercent } from "@/lib/product-pricing";
 
 type Draft = {
   id: string;
@@ -16,7 +17,8 @@ type Draft = {
   description: string;
   category: string;
   brand: string;
-  price: string;
+  mrp: string;
+  offerPrice: string;
   priceMode: "FIXED" | "QUOTE";
   stockStatus: "IN_STOCK" | "LIMITED" | "OUT_OF_STOCK";
   active: boolean;
@@ -31,7 +33,8 @@ const emptyDraft: Draft = {
   description: "",
   category: "",
   brand: "",
-  price: "0",
+  mrp: "",
+  offerPrice: "",
   priceMode: "FIXED",
   stockStatus: "IN_STOCK",
   active: false,
@@ -47,7 +50,8 @@ function toDraft(product: CatalogProduct): Draft {
     description: product.description,
     category: product.category,
     brand: product.brand ?? "",
-    price: String(product.price),
+    mrp: product.mrp === null ? "" : String(product.mrp),
+    offerPrice: product.offerPrice === null ? "" : String(product.offerPrice),
     priceMode: product.priceMode,
     stockStatus: product.stockStatus,
     active: product.active,
@@ -102,7 +106,9 @@ export default function AdminProductsPage() {
         description: draft.description.trim(),
         category: draft.category.trim(),
         brand: draft.brand.trim() || null,
-        price: Number(draft.price),
+        price: Number(draft.offerPrice || draft.mrp || 0),
+        mrp: draft.mrp ? Number(draft.mrp) : null,
+        offerPrice: draft.offerPrice ? Number(draft.offerPrice) : null,
         priceMode: draft.priceMode,
         stockStatus: draft.stockStatus,
         active: draft.active,
@@ -148,13 +154,14 @@ export default function AdminProductsPage() {
       const result = await response.json() as {
         created?: number;
         updated?: number;
+        unchanged?: number;
         error?: string;
       };
       if (!response.ok || result.created === undefined || result.updated === undefined) {
         throw new Error(result.error ?? "The product spreadsheet could not be imported.");
       }
       form.reset();
-      setMessage(`Import complete: ${result.created} added, ${result.updated} updated.`);
+      setMessage(`Import complete: ${result.created} added, ${result.updated} updated, ${result.unchanged ?? 0} unchanged. Products not in the file were left untouched.`);
       await loadProducts();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The product spreadsheet could not be imported.");
@@ -255,11 +262,11 @@ export default function AdminProductsPage() {
           <div className="admin-orders-heading">
             <div><h2>Import products &amp; images</h2><p>Upload an Excel workbook or CSV to add products and update matching SKUs.</p></div>
             <div className="product-template-links">
-              <a className="button button-outline" href="/product-import-template.xlsx" download><Download size={15} /> Excel template</a>
-              <a className="button button-outline" href="/product-import-template.csv" download><Download size={15} /> CSV template</a>
+              <a className="button button-outline" href="/api/admin/products/template?format=xlsx"><Download size={15} /> Download live Excel catalog</a>
+              <a className="button button-outline" href="/api/admin/products/template?format=csv"><Download size={15} /> Download live CSV catalog</a>
             </div>
           </div>
-          <p className="account-help">Use the first worksheet and keep the template’s column names. To import a picture, embed one JPEG or PNG in that product’s row in the Image column. It replaces the main product image while keeping the rest of the gallery. CSV files cannot contain embedded pictures. Matching SKUs are updated, and the whole file is checked before any changes are saved (up to 1,000 rows, 5 MB).</p>
+          <p className="account-help">Downloads include every current product, including drafts and archived items. Edit rows and upload the file to update matching SKUs; products omitted from the file are never deleted. Unchanged rows are skipped. Offer price must be lower than MRP; the discount is calculated automatically. Leave an image reference unchanged to keep the image, or embed one JPEG/PNG in its row to replace the main image. CSV cannot embed images. Imports support up to 1,000 rows and 5 MB.</p>
           <form className="request-form product-import-form" onSubmit={(event) => void importProducts(event)}>
             <label>Choose an Excel workbook (.xlsx) or CSV to upload<input name="file" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required /></label>
             <button className="button button-dark" disabled={busy}><Upload size={15} /> {busy ? "Importing…" : "Import products"}</button>
@@ -267,7 +274,7 @@ export default function AdminProductsPage() {
         </section>
         <div className="product-admin-layout">
           <section className="admin-orders-section product-admin-list"><div className="admin-orders-heading"><div><h2>Products ({products.length})</h2><p>Unpublished products are not shown to shoppers.</p></div><button className="profile-add-button" onClick={() => { setDraft(emptyDraft); setError(""); setMessage(""); }}><PackagePlus size={15} /> New product</button></div><label className="include-archived"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Include archived</label>
-            <div className="admin-product-list">{products.map((product) => <button key={product.id} className={`admin-order-row ${draft.id === product.id ? "selected" : ""}`} onClick={() => editProduct(product)}><span className="admin-order-row-top"><strong>{product.name}</strong><span>{product.active ? "Published" : product.archived ? "Archived" : "Draft"}</span></span><span className="admin-order-row-bottom"><span>{product.sku} · {product.category}</span><span>{product.priceMode === "QUOTE" ? "Quote" : `₹${product.price.toLocaleString("en-IN")}`}</span></span></button>)}</div>
+            <div className="admin-product-list">{products.map((product) => <button key={product.id} className={`admin-order-row ${draft.id === product.id ? "selected" : ""}`} onClick={() => editProduct(product)}><span className="admin-order-row-top"><strong>{product.name}</strong><span>{product.active ? "Published" : product.archived ? "Archived" : "Draft"}</span></span><span className="admin-order-row-bottom"><span>{product.sku} · {product.category}</span><span className="admin-product-prices">{product.priceMode === "QUOTE" ? "Quote" : <>{product.offerPrice !== null && product.mrp !== null && <s>₹{product.mrp.toLocaleString("en-IN")}</s>}₹{product.price.toLocaleString("en-IN")}{getDiscountPercent(product.mrp, product.offerPrice) !== null && <strong>{getDiscountPercent(product.mrp, product.offerPrice)}% off</strong>}</>}</span></span></button>)}</div>
           </section>
           <section className="admin-orders-section">
             <h2 className="profile-section-title">{draft.id ? "Edit product" : "Add a product"}</h2>
@@ -276,7 +283,8 @@ export default function AdminProductsPage() {
               <label>URL slug<input value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-") })} maxLength={120} required /></label>
               <label>Description<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} maxLength={5000} rows={5} required /></label>
               <div className="form-row"><label>Category<input value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} maxLength={100} required /></label><label>Brand<input value={draft.brand} onChange={(event) => setDraft({ ...draft, brand: event.target.value })} maxLength={100} /></label></div>
-              <div className="form-row"><label>Pricing<select value={draft.priceMode} onChange={(event) => setDraft({ ...draft, priceMode: event.target.value as Draft["priceMode"] })}><option value="FIXED">Fixed price</option><option value="QUOTE">Request a quote</option></select></label><label>Price (₹)<input type="number" min="0" max="100000000" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} required /></label></div>
+              <div className="form-row"><label>Pricing<select value={draft.priceMode} onChange={(event) => setDraft({ ...draft, priceMode: event.target.value as Draft["priceMode"] })}><option value="FIXED">Fixed price</option><option value="QUOTE">Request a quote</option></select></label><label>MRP (₹)<input type="number" min="1" max="100000000" value={draft.mrp} onChange={(event) => setDraft({ ...draft, mrp: event.target.value })} disabled={draft.priceMode === "QUOTE"} required={draft.priceMode === "FIXED"} /></label></div>
+              <div className="form-row"><label>Offer price (₹)<input type="number" min="1" max="100000000" value={draft.offerPrice} onChange={(event) => setDraft({ ...draft, offerPrice: event.target.value })} disabled={draft.priceMode === "QUOTE"} /></label><div className="product-discount-preview" aria-live="polite">{getDiscountPercent(Number(draft.mrp), Number(draft.offerPrice)) !== null ? `${getDiscountPercent(Number(draft.mrp), Number(draft.offerPrice))}% off` : "No offer discount"}</div></div>
               <div className="form-row"><label>Availability<select value={draft.stockStatus} onChange={(event) => setDraft({ ...draft, stockStatus: event.target.value as Draft["stockStatus"] })}><option value="IN_STOCK">In stock</option><option value="LIMITED">Limited</option><option value="OUT_OF_STOCK">Out of stock</option></select></label><label>Sort order<input type="number" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: event.target.value })} /></label></div>
               <label className="check-field"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /> Publish in public catalog</label>
               <button className="button button-dark" disabled={busy}><Save size={15} /> {busy ? "Saving…" : "Save product"}</button>

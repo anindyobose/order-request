@@ -140,6 +140,8 @@ model Product {
   category    String
   brand       String?
   price       Int            @default(0)
+  mrp         Int?
+  offerPrice  Int?
   priceMode   PriceMode      @default(FIXED)
   stockStatus StockStatus    @default(IN_STOCK)
   active      Boolean        @default(false)
