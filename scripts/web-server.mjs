@@ -20,9 +20,18 @@ async function shutdown() {
   stopping = true;
   shutdownPromise = (async () => {
     if (server?.listening) {
-      await new Promise((resolve, reject) => {
+      let forceCloseTimer;
+      const closed = new Promise((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
+      server.closeIdleConnections();
+      forceCloseTimer = setTimeout(() => server.closeAllConnections(), 7000);
+      forceCloseTimer.unref();
+      try {
+        await closed;
+      } finally {
+        clearTimeout(forceCloseTimer);
+      }
     }
     if (app) await app.close();
     await prisma.$disconnect();

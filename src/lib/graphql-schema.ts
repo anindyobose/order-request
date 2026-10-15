@@ -10,8 +10,6 @@ import {
 } from "@prisma/client";
 import { GraphQLError, GraphQLScalarType, Kind } from "graphql";
 import { randomUUID } from "node:crypto";
-import { unlink } from "node:fs/promises";
-import path from "node:path";
 import { createSchema } from "graphql-yoga";
 import type { IResolvers } from "@graphql-tools/utils";
 import {
@@ -260,7 +258,12 @@ function pageArgs(page?: number, pageSize?: number) {
 }
 
 function productInclude() {
-  return { images: { orderBy: { sortOrder: Prisma.SortOrder.asc } } } as const;
+  return {
+    images: {
+      orderBy: { sortOrder: Prisma.SortOrder.asc },
+      select: { id: true, url: true, altText: true, sortOrder: true },
+    },
+  } as const;
 }
 
 function orderInclude() {
@@ -1373,9 +1376,19 @@ const resolvers: IResolvers<unknown, AuthContext> = {
         if (!Number.isInteger(image.sortOrder) || image.sortOrder < 0) throw validationError("Image order must be a positive whole number.");
       }
       return prisma.$transaction(async (tx) => {
-        if (!(await tx.product.findUnique({ where: { id: productId }, select: { id: true } }))) {
+        const product = await tx.product.findUnique({
+          where: { id: productId },
+          select: {
+            id: true,
+            images: { select: { url: true, data: true } },
+          },
+        });
+        if (!product) {
           throw new GraphQLError("Product not found.", { extensions: { code: "NOT_FOUND" } });
         }
+        const uploadedData = new Map(
+          product.images.map((image) => [image.url, image.data]),
+        );
         await tx.productImage.deleteMany({ where: { productId } });
         await tx.productImage.createMany({
           data: images.map((image) => ({
@@ -1383,6 +1396,7 @@ const resolvers: IResolvers<unknown, AuthContext> = {
             url: image.url,
             altText: requireText(image.altText, "Image description", 200),
             sortOrder: image.sortOrder,
+            data: uploadedData.get(image.url) ?? undefined,
           })),
         });
         return tx.product.findUniqueOrThrow({
@@ -1399,19 +1413,6 @@ const resolvers: IResolvers<unknown, AuthContext> = {
       });
       if (!image) return false;
       await prisma.productImage.delete({ where: { id: image.id } });
-      const filename = image.url.match(/^\/uploads\/([a-zA-Z0-9-]+\.(?:jpg|png|webp))$/)?.[1];
-      if (filename) {
-        try {
-          await unlink(path.join(process.cwd(), "public", "uploads", filename));
-        } catch (error) {
-          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
-            console.error("Removed product image record but could not delete its uploaded file.", error);
-            throw new GraphQLError("The image record was removed, but its file could not be deleted.", {
-              extensions: { code: "FILE_CLEANUP_FAILED" },
-            });
-          }
-        }
-      }
       return true;
     },
     archiveProduct: async (_: unknown, { productId }: { productId: string }, ctx: AuthContext) => {

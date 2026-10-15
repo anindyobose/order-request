@@ -62,9 +62,9 @@ function mailTransport() {
     ...(process.env.SMTP_USER
       ? { auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD || "" } }
       : {}),
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000,
+    connectionTimeout: 2_000,
+    greetingTimeout: 2_000,
+    socketTimeout: 5_000,
   });
   return transporter;
 }
@@ -164,7 +164,7 @@ async function deliverSms(job) {
       "content-type": "application/json",
     },
     body: JSON.stringify({ to: job.recipient, message: text }),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(7_000),
   });
   if (!response.ok) {
     if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
@@ -252,6 +252,7 @@ async function processJob(job) {
 
 async function run() {
   console.log("Notification worker started.");
+  let consecutiveErrors = 0;
   while (!stopping) {
     try {
       await db.workerHeartbeat.upsert({
@@ -259,16 +260,42 @@ async function run() {
         create: { id: "notifications" },
         update: { updatedAt: new Date() },
       });
+      if (stopping) break;
       const job = await claimJob();
+      if (stopping) {
+        if (job) {
+          await db.notificationJob.update({
+            where: { id: job.id },
+            data: {
+              status: NotificationStatus.RETRY,
+              claimedAt: null,
+              nextAttemptAt: new Date(),
+            },
+          });
+        }
+        break;
+      }
       if (job) await processJob(job);
       else await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      consecutiveErrors = 0;
     } catch (error) {
+      consecutiveErrors += 1;
       console.error(
         JSON.stringify({
           event: "notification_worker_error",
+          consecutiveErrors,
           error: sanitizeError(error),
         }),
       );
+      if (consecutiveErrors >= 10) {
+        console.error(JSON.stringify({
+          event: "notification_worker_unrecoverable",
+          error: "The worker encountered 10 consecutive database or processing failures.",
+        }));
+        process.exitCode = 1;
+        stopping = true;
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
   }
@@ -307,6 +334,7 @@ async function main() {
   }
   runPromise = run();
   await runPromise;
+  if (stopping) await shutdown();
 }
 
 main().catch(async (error) => {

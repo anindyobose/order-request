@@ -35,6 +35,8 @@ if (uri.protocol !== "postgresql:" && uri.protocol !== "postgres:") {
 }
 const databaseName = decodeURIComponent(uri.pathname.slice(1));
 if (!databaseName) throw new Error("DATABASE_URL must name a database.");
+const socketDirectory = uri.searchParams.get("host");
+const databaseHost = socketDirectory?.startsWith("/") ? socketDirectory : uri.hostname;
 
 const timestamp = new Date().toISOString().replaceAll(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 const filename = `new-chandan-${databaseName}-${timestamp}.dump`;
@@ -47,7 +49,7 @@ const args = [
   "--format=custom",
   "--no-owner",
   "--no-privileges",
-  "--host", uri.hostname,
+  "--host", databaseHost,
   "--port", uri.port || "5432",
   "--username", decodeURIComponent(uri.username),
   "--dbname", databaseName,

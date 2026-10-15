@@ -1,5 +1,3 @@
-export const RDS_CA_FILE: string;
-
 export function createDatabaseUrl(
   environment?: Record<string, string | undefined>,
 ): string;

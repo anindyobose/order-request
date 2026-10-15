@@ -29,7 +29,7 @@ function runMigration() {
   });
 }
 
-const deadline = Date.now() + 60_000;
+const deadline = Date.now() + 30_000;
 let attempt = 0;
 let delayMs = 1000;
 
@@ -43,7 +43,7 @@ while (!stopped) {
     attempt += 1;
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
-      console.error("Database migrations failed after approximately 60 seconds of retries.");
+      console.error("Database migrations failed after approximately 30 seconds of retries.");
       process.exitCode = 1;
       break;
     }

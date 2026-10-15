@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { currentUserFromRequest } from "@/lib/auth";
@@ -65,7 +63,10 @@ export async function POST(request: NextRequest) {
     if (file.size < 1 || file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: "Images must be between 1 byte and 5 MB.", code: "FILE_TOO_LARGE" }, { status: 413 });
     }
-    const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true },
+    });
     if (!product) {
       return NextResponse.json({ error: "Product not found.", code: "NOT_FOUND" }, { status: 404 });
     }
@@ -76,11 +77,18 @@ export async function POST(request: NextRequest) {
     if (!signature) {
       return NextResponse.json({ error: "Use a valid JPEG, PNG or WebP image.", code: "INVALID_FILE_TYPE" }, { status: 415 });
     }
-    const directory = path.join(process.cwd(), "public", "uploads");
-    await mkdir(directory, { recursive: true });
     const filename = `${randomUUID()}.${signature.extension}`;
-    await writeFile(path.join(directory, filename), buffer, { flag: "wx" });
-    return NextResponse.json({ url: `/uploads/${filename}`, mimeType: signature.mime }, { status: 201 });
+    const url = `/uploads/${filename}`;
+    await prisma.productImage.create({
+      data: {
+        productId,
+        url,
+        altText: file.name.slice(0, 200) || product.name,
+        sortOrder: 0,
+        data: buffer,
+      },
+    });
+    return NextResponse.json({ url, mimeType: signature.mime }, { status: 201 });
   } catch (error) {
     console.error("Product image upload failed.", error);
     return NextResponse.json({ error: "The image could not be saved.", code: "UPLOAD_FAILED" }, { status: 500 });

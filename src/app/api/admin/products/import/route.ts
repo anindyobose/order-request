@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { currentUserFromRequest } from "@/lib/auth";
@@ -13,17 +11,6 @@ const MAX_FORM_OVERHEAD_BYTES = 64 * 1024;
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
-}
-
-async function removeUploadedFiles(paths: string[]) {
-  for (const filePath of paths) {
-    try {
-      await unlink(filePath);
-    } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") continue;
-      console.error("Could not remove a product image after import.", error);
-    }
-  }
 }
 
 export async function POST(request: Request) {
@@ -117,17 +104,10 @@ export async function POST(request: Request) {
 
     const existingSkuSet = new Set(existingSkus.map((product) => product.sku));
     const imageUrls = new Map<string, string>();
-    const savedImagePaths: string[] = [];
-    const removedImagePaths: string[] = [];
-    const uploadDirectory = path.join(process.cwd(), "public", "uploads");
     try {
       for (const product of products) {
         if (!product.image) continue;
-        await mkdir(uploadDirectory, { recursive: true });
         const filename = `${randomUUID()}.${product.image.extension}`;
-        const filePath = path.join(uploadDirectory, filename);
-        await writeFile(filePath, product.image.buffer, { flag: "wx" });
-        savedImagePaths.push(filePath);
         imageUrls.set(product.sku, `/uploads/${filename}`);
       }
 
@@ -153,11 +133,14 @@ export async function POST(request: Request) {
           });
           const primaryImage = savedProduct.images[0];
           if (primaryImage) {
-            const match = /^\/uploads\/([a-f0-9-]+\.(?:jpg|png|webp))$/i.exec(primaryImage.url);
-            if (match) removedImagePaths.push(path.join(uploadDirectory, match[1]));
             await tx.productImage.update({
               where: { id: primaryImage.id },
-              data: { url: imageUrl, altText: product.name, sortOrder: 0 },
+              data: {
+                url: imageUrl,
+                altText: product.name,
+                sortOrder: 0,
+                data: image ? Uint8Array.from(image.buffer) : undefined,
+              },
             });
           } else {
             await tx.productImage.create({
@@ -166,19 +149,18 @@ export async function POST(request: Request) {
                 url: imageUrl,
                 altText: product.name,
                 sortOrder: 0,
+                data: image ? Uint8Array.from(image.buffer) : undefined,
               },
             });
           }
         }
       }, { maxWait: 5_000, timeout: 30_000 });
     } catch (error) {
-      await removeUploadedFiles(savedImagePaths);
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return errorResponse("A product SKU or slug conflicts with another catalog item. No rows were imported.", 409);
       }
       throw error;
     }
-    await removeUploadedFiles(removedImagePaths);
 
     const updated = products.filter((product) => existingSkuSet.has(product.sku)).length;
     return NextResponse.json({

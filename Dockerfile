@@ -15,11 +15,7 @@ FROM node:24-bookworm-slim AS production
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl openssl \
-    && curl --fail --silent --show-error --location \
-      https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
-      --output /etc/ssl/certs/rds-global-bundle.pem \
-    && apt-get purge -y --auto-remove curl \
+    && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 COPY prisma ./prisma

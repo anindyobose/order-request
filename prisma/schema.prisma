@@ -163,6 +163,7 @@ model ProductImage {
   altText   String
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
+  data      Bytes?   @db.ByteA
 
   @@index([productId, sortOrder])
 }

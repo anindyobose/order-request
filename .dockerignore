@@ -6,7 +6,7 @@ node_modules
 !.env.example
 backups
 public/uploads
-deploy/aws.env
-deploy/aws.secrets.env
-.aws-deploy
+deploy/gcp.env
+deploy/gcp.secrets.env
+.gcp-deploy
 npm-debug.log*

@@ -66,11 +66,11 @@ docker compose up --build -d
 docker compose run --rm web npm run db:seed
 ```
 
-Compose applies migrations once through a one-shot `migrate` service before starting the web app and worker. The production image targets use separate Dockerfile commands; the worker has no published port. PostgreSQL data and uploaded product images use named volumes. Back up volumes and the database independently; for multi-instance production hosting, configure durable shared/object storage for uploads instead of relying on a container-local filesystem.
+Compose applies migrations once through a one-shot `migrate` service before starting the web app and worker. The production image targets use separate Dockerfile commands; the worker has no published port. PostgreSQL data and legacy uploaded product images use named volumes.
 
-## AWS deployment preparation
+## Google Cloud deployment preparation
 
-The repository includes production `web` and `worker` Docker targets, a database-independent `/health` endpoint, verified Aurora TLS support, retrying startup/migrations, and graceful shutdown. See [deploy/AWS-DEPLOY.md](./deploy/AWS-DEPLOY.md) for the audit, environment setup, exact deployment steps, and operational caveats. The supplied deploy script is at `deploy/deploy-aws.sh`; it has not been run.
+The repository includes production `web` and `worker` Docker targets, a database-independent `/health` endpoint, Cloud SQL Unix-socket support, retrying startup/migrations, graceful shutdown, and database-backed uploaded image storage for stateless Cloud Run instances. See [deploy/GCP-DEPLOY.md](./deploy/GCP-DEPLOY.md) for setup and deployment instructions. The supplied deploy script is at `deploy/deploy-gcp.sh`; it is not run during local preparation.
 
 ## Accounts, notifications, and operations
 
@@ -78,11 +78,11 @@ The repository includes production `web` and `worker` Docker targets, a database
 - Sessions use opaque HttpOnly cookies, password hashes use bcrypt, and recovery tokens are single-use and time-limited. Configure a real SMTP relay (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`) to deliver account recovery and order email. Without SMTP, jobs remain visible and are retried or marked failed; recovery mail is not shown in the browser.
 - SMS is optional. Configure an approved `SMS_PROVIDER_URL` and `SMS_PROVIDER_TOKEN`, and ensure local consent, sender registration, and provider terms are satisfied before enabling it.
 - `/api/health` reports database and notification-worker health. The admin settings page shows the same readiness, administrator new-order emails, optional dispatch SMS, failed-job retry controls, and health checks. Buyer status-update emails are queued for every order status change and are not disabled by event preferences; delivery requires a configured email provider and worker.
-- Product image uploads accept JPEG, PNG, or WebP, up to 5 MB each. Uploaded files are written beneath `public/uploads`; protect that storage with durable backups and access controls.
+- Product image uploads accept JPEG, PNG, or WebP, up to 5 MB each. Uploaded image bytes are stored in PostgreSQL and served from `/uploads/...`, so they remain available across stateless Cloud Run instances; include image bytes in your database backup plan.
 - Administrators can bulk-import `.xlsx` workbooks or UTF-8 `.csv` files from `/admin/products`. Use the downloadable template: rows are matched by SKU, new SKUs are added, and existing SKUs have their catalog fields updated. Prices are whole rupees; use `FIXED`/`QUOTE`, `IN_STOCK`/`LIMITED`/`OUT_OF_STOCK`, and true/false (or yes/no, 1/0) for the corresponding fields. To import a product picture, embed one JPEG or PNG in that product's row in the Excel template's `image` column; it replaces the primary image while retaining the rest of the gallery. CSV cannot contain embedded pictures. Files are limited to 1,000 products and 5 MB, validated as a whole, and applied atomically; rows without a new picture preserve existing images and archive status.
 - The staff request dashboard checks for new customer requests every 10 seconds and shows a dismissible notification with a shortcut to the new request. Polling failures are announced in the dashboard and retried automatically.
 - Every order status transition is recorded in the audit history with its actor; staff and buyer messages are included with the author. A buyer email notification is queued in the same transaction for each transition.
-- The starter catalog uses externally hosted sample photography. Replace it with shop-owned or properly licensed product images before production; product-management uploads are stored locally.
+- The starter catalog uses externally hosted sample photography. Replace it with shop-owned or properly licensed product images before production.
 - Order operations are role-checked and audited. Sending final terms moves the order to “Awaiting buyer confirmation.” The buyer can accept in My Requests, or staff can record payment details (amount, method, and optional transaction ID) to advance it to “Awaiting payment”; staff payment entry does not record buyer acceptance or verify funds. Payment records must be separately verified by staff, and full verification is required before the order can be readied for dispatch.
 
 ## Backup and restore verification
