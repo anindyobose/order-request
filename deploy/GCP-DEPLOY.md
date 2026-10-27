@@ -67,6 +67,41 @@ The script does not migrate local PostgreSQL data. Prisma migrations create/upgr
 
 The first admin is not seeded automatically. After Cloud SQL is deployed and migrations finish, run `node scripts/seed-admin.mjs` as a one-off Cloud Run job using the same service identity and Cloud SQL attachment, with temporary `ADMIN_EMAIL`, `ADMIN_NAME`, and `ADMIN_PASSWORD` overrides. Do not store the admin password in committed config or persistent app env files. Verify admin login, image upload/read, and notification delivery before going live.
 
+## Continuous deployment from GitHub
+
+[`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml) lints, tests and builds every pull request and every push to `main`. A push to `main` that passes then runs `deploy/deploy-gcp.sh` (images tagged with the commit SHA, migration job, Cloud Run web and worker). It authenticates with Workload Identity Federation, so no service-account key is stored in GitHub. Run `bash deploy/deploy-gcp.sh` once manually first so the infrastructure exists.
+
+One-time setup (replace `PROJECT_ID`, `PROJECT_NUMBER`; repository is `anindyobose/order-request`):
+
+```bash
+gcloud iam service-accounts create github-deployer --project PROJECT_ID
+SA=github-deployer@PROJECT_ID.iam.gserviceaccount.com
+for role in run.admin cloudsql.admin artifactregistry.admin secretmanager.admin \
+  serviceusage.serviceUsageAdmin iam.serviceAccountAdmin iam.serviceAccountUser \
+  resourcemanager.projectIamAdmin; do
+  gcloud projects add-iam-policy-binding PROJECT_ID --member="serviceAccount:$SA" --role="roles/$role" --condition=None
+done
+
+gcloud iam workload-identity-pools create github --project PROJECT_ID --location global
+gcloud iam workload-identity-pools providers create-oidc github-repo --project PROJECT_ID --location global \
+  --workload-identity-pool github --issuer-uri https://token.actions.githubusercontent.com \
+  --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition "assertion.repository=='anindyobose/order-request'"
+gcloud iam service-accounts add-iam-policy-binding $SA --project PROJECT_ID --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/anindyobose/order-request"
+```
+
+Then in GitHub, create an environment named `production` (Settings → Environments; optionally require reviewers and restrict it to `main`) and add these **environment secrets**:
+
+| Secret | Value |
+|---|---|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github-repo` |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | `github-deployer@PROJECT_ID.iam.gserviceaccount.com` |
+| `GCP_ENV` | full contents of your `deploy/gcp.env` |
+| `GCP_SECRETS_ENV` | full contents of your `deploy/gcp.secrets.env` (keep `APP_ENCRYPTION_KEY` identical to the live value) |
+
+Also enable branch protection on `main` (require pull requests and the "Lint, test and build" check) so only tested code reaches production. The deployer roles are broad because the script also provisions infrastructure; once stable you can narrow them.
+
 ## Operational notes
 
 - Cloud SQL has a connection limit. Each web instance and worker process uses at most five Prisma connections; lower `DB_POOL_MAX` if the SQL tier or service scaling requires it. The deployment script caps web scaling at two instances by default.
