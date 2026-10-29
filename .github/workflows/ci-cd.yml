@@ -1,0 +1,68 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build?schema=public
+
+  deploy:
+    name: Deploy to production (Google Cloud)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    # Never run two production deploys at once, and never cancel one midway.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # deploy-gcp.sh reads these git-ignored files; rebuild them from GitHub secrets.
+      - name: Write deployment configuration
+        env:
+          GCP_ENV: ${{ secrets.GCP_ENV }}
+          GCP_SECRETS_ENV: ${{ secrets.GCP_SECRETS_ENV }}
+        run: |
+          printf '%s\n' "$GCP_ENV" > deploy/gcp.env
+          printf '%s\n' "$GCP_SECRETS_ENV" > deploy/gcp.secrets.env
+          # Compose only needs these to resolve the build config; .env is not copied into images.
+          printf 'POSTGRES_DB=ci\nPOSTGRES_USER=ci\nPOSTGRES_PASSWORD=ci\n' > .env
+
+      - name: Deploy
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: bash deploy/deploy-gcp.sh
