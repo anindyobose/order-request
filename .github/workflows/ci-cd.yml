@@ -3,7 +3,7 @@ name: CI/CD
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -29,18 +29,18 @@ jobs:
           DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build?schema=public
 
   deploy:
-    name: Deploy to production (Google Cloud)
+    name: Deploy to Google Cloud
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: production
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}
     permissions:
       contents: read
       id-token: write
-    # Never run two production deploys at once, and never cancel one midway.
+    # Never overlap deployments within either environment, and never cancel one midway.
     concurrency:
-      group: production-deploy
+      group: ${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}-deploy
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -66,4 +66,8 @@ jobs:
       - name: Deploy
         env:
           IMAGE_TAG: ${{ github.sha }}
+          # Keep develop isolated from production resources and data.
+          APP_NAME: ${{ github.ref == 'refs/heads/develop' && 'order-request-preprod' || 'order-request' }}
+          WEB_SERVICE: ${{ github.ref == 'refs/heads/develop' && 'web-preprod' || 'web' }}
+          WORKER_SERVICE: ${{ github.ref == 'refs/heads/develop' && 'worker-preprod' || 'worker' }}
         run: bash deploy/deploy-gcp.sh

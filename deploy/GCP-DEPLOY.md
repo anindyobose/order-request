@@ -69,7 +69,14 @@ The first admin is not seeded automatically. After Cloud SQL is deployed and mig
 
 ## Continuous deployment from GitHub
 
-[`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml) lints, tests and builds every pull request and every push to `main`. A push to `main` that passes then runs `deploy/deploy-gcp.sh` (images tagged with the commit SHA, migration job, Cloud Run web and worker). It authenticates with Workload Identity Federation, so no service-account key is stored in GitHub. Run `bash deploy/deploy-gcp.sh` once manually first so the infrastructure exists.
+[`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml) lints, tests and builds every pull request and every push to `main` or `develop`. A push to `main` deploys production; a push to `develop` deploys an isolated pre-production stack using the `order-request-preprod` resource namespace. Both deployments use images tagged with the commit SHA, run the migration job, and deploy Cloud Run web and worker workloads. The workflow authenticates with Workload Identity Federation, so no service-account key is stored in GitHub. Run `bash deploy/deploy-gcp.sh` once manually for each resource namespace before enabling the corresponding workflow environment.
+
+Configure two GitHub Actions environments:
+
+- `production`: existing `GCP_ENV` and `GCP_SECRETS_ENV` values for `order-request`.
+- `pre-production`: separate `GCP_ENV` and `GCP_SECRETS_ENV` values for the pre-production database and application. Set `APP_ORIGIN` to the generated pre-production Cloud Run URL after the first deployment, then rerun the workflow so password-reset links and origin checks use the stable URL.
+
+The pre-production environment must use a separate `APP_ENCRYPTION_KEY`, administrator credentials, SMTP/SMS configuration, and database from production. The workflow reuses the same GCP project and deployer identity, but `APP_NAME`, `WEB_SERVICE`, and `WORKER_SERVICE` are overridden for `develop`, so it cannot update production services.
 
 One-time setup (replace `PROJECT_ID`, `PROJECT_NUMBER`; repository is `anindyobose/order-request`):
 
