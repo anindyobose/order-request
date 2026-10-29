@@ -80,6 +80,40 @@ export async function POST(request: Request) {
 
     const products = await parseProductImport(bytes, extension);
     const skuList = products.map((product) => product.sku);
+
+    // Auto-generated slugs keep an existing product's URL, and otherwise avoid slugs already in the catalog.
+    const generated = products.filter((product) => product.slugGenerated);
+    if (generated.length) {
+      const [knownBySku, takenRows] = await Promise.all([
+        prisma.product.findMany({
+          where: { sku: { in: generated.map((product) => product.sku) } },
+          select: { sku: true, slug: true },
+        }),
+        prisma.product.findMany({
+          where: { OR: generated.map((product) => ({ slug: { startsWith: product.slug } })) },
+          select: { sku: true, slug: true },
+        }),
+      ]);
+      const slugBySku = new Map(knownBySku.map((product) => [product.sku, product.slug]));
+      const used = new Set(products.filter((product) => !product.slugGenerated).map((product) => product.slug));
+      for (const product of generated) {
+        const existingSlug = slugBySku.get(product.sku);
+        if (existingSlug) {
+          product.slug = existingSlug;
+          used.add(existingSlug);
+        }
+      }
+      for (const product of generated) {
+        if (slugBySku.has(product.sku)) continue;
+        const base = product.slug;
+        let candidate = base;
+        for (let suffix = 2; used.has(candidate) || takenRows.some((row) => row.slug === candidate); suffix += 1) {
+          candidate = `${base}-${suffix}`;
+        }
+        product.slug = candidate;
+        used.add(candidate);
+      }
+    }
     const slugList = products.map((product) => product.slug);
     const [existingProducts, existingSlugs] = await Promise.all([
       prisma.product.findMany({

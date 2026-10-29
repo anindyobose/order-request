@@ -62,6 +62,31 @@ describe("product spreadsheet imports", () => {
     ]);
   });
 
+  it("ignores formatted empty rows and columns that Excel counts in the sheet size", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Products");
+    sheet.addRow(headers);
+    sheet.addRow([...row.slice(0, 7), "quote", "limited", "false", 2]);
+    sheet.getCell("Z999").style = { font: { bold: true } };
+    const bytes = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const products = await parseProductImport(bytes, "xlsx");
+    expect(products).toHaveLength(1);
+  });
+
+  it("generates unique slugs from names when the slug is blank", async () => {
+    const csv = [
+      "SKU,Name,Description,Category,MRP,Price Mode,Stock Status,Active",
+      "A-1,Acoustic Guitar!,Desc,Strings,100,FIXED,IN_STOCK,yes",
+      "A-2,Acoustic Guitar,Desc,Strings,100,FIXED,IN_STOCK,yes",
+      "A-3,  ,Desc,Strings,100,FIXED,IN_STOCK,yes",
+    ].join("\n");
+
+    const products = await parseProductImport(Buffer.from(csv.replace("A-3,  ,", "A-3,Ukulele,")), "csv");
+    expect(products.map((product) => product.slug)).toEqual(["acoustic-guitar", "acoustic-guitar-2", "ukulele"]);
+    expect(products.every((product) => product.slugGenerated)).toBe(true);
+  });
+
   it("reads an Excel workbook and accepts common enum casing", async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Products");
