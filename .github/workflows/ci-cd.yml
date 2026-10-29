@@ -3,7 +3,7 @@ name: CI/CD
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -31,29 +31,46 @@ jobs:
   deploy:
     name: Deploy to production (Google Cloud)
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: production
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}
     permissions:
       contents: read
       id-token: write
-    # Never run two production deploys at once, and never cancel one midway.
+    # Never overlap deployments within either environment, and never cancel one midway.
     concurrency:
-      group: production-deploy
+      group: ${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}-deploy
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
+      # Skip (instead of failing) when the environment has no GCP configuration.
+      - name: Check GCP configuration
+        id: gcp
+        env:
+          WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_SA: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$WIF_PROVIDER" ] && [ -n "$DEPLOY_SA" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GCP secrets are not set for the '${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}' environment; skipping deploy."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: google-github-actions/auth@v2
+        if: steps.gcp.outputs.configured == 'true'
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        if: steps.gcp.outputs.configured == 'true'
 
       # deploy-gcp.sh reads these git-ignored files; rebuild them from GitHub secrets.
       - name: Write deployment configuration
+        if: steps.gcp.outputs.configured == 'true'
         env:
           GCP_ENV: ${{ secrets.GCP_ENV }}
           GCP_SECRETS_ENV: ${{ secrets.GCP_SECRETS_ENV }}
@@ -64,6 +81,11 @@ jobs:
           printf 'POSTGRES_DB=ci\nPOSTGRES_USER=ci\nPOSTGRES_PASSWORD=ci\n' > .env
 
       - name: Deploy
+        if: steps.gcp.outputs.configured == 'true'
         env:
           IMAGE_TAG: ${{ github.sha }}
+          # Keep develop isolated from production resources and data.
+          APP_NAME: ${{ github.ref == 'refs/heads/develop' && 'order-request-preprod' || 'order-request' }}
+          WEB_SERVICE: ${{ github.ref == 'refs/heads/develop' && 'web-preprod' || 'web' }}
+          WORKER_SERVICE: ${{ github.ref == 'refs/heads/develop' && 'worker-preprod' || 'worker' }}
         run: bash deploy/deploy-gcp.sh
