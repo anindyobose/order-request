@@ -248,6 +248,10 @@ export default function AdminProductsPage() {
     }
   }
 
+  useEffect(() => {
+    if (error || message) document.querySelector(".form-message")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [error, message]);
+
   if (loading) return <main className="admin-page"><div className="app-loading">Checking administrator access…</div></main>;
   if (!user || user.role !== "ADMIN") return <main className="admin-page"><div className="admin-content"><section className="account-empty"><h1>Administrator access required.</h1><Link className="button button-dark" href="/login?returnTo=%2Fadmin%2Fproducts">Sign in</Link></section></div></main>;
 

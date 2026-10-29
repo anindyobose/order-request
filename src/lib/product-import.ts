@@ -46,9 +46,21 @@ export type ImportedProductImage = {
   mimeType: "image/jpeg" | "image/png";
 };
 
+export function slugify(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 110)
+    .replace(/-+$/g, "");
+}
+
 export type ImportedProduct = {
   sku: string;
   slug: string;
+  slugGenerated?: true;
   name: string;
   description: string;
   category: string;
@@ -216,8 +228,16 @@ export async function parseProductImport(
 
   const sheet = workbook.worksheets[0];
   if (!sheet) throw new ProductImportError("The spreadsheet must contain a worksheet.");
-  if (sheet.rowCount > PRODUCT_IMPORT_MAX_ROWS + 1 || sheet.columnCount > PRODUCT_IMPORT_COLUMNS.length) {
-    throw new ProductImportError(`Import at most ${PRODUCT_IMPORT_MAX_ROWS} product rows and ${PRODUCT_IMPORT_COLUMNS.length} columns.`);
+  // Excel often reports formatted-but-empty rows and columns in rowCount/columnCount,
+  // so limits apply to rows that actually contain values. Extra headers are rejected below.
+  let lastDataRow = 0;
+  let dataRows = 0;
+  sheet.eachRow({ includeEmpty: false }, (_row, rowNumber) => {
+    lastDataRow = Math.max(lastDataRow, rowNumber);
+    if (rowNumber > 1) dataRows += 1;
+  });
+  if (dataRows > PRODUCT_IMPORT_MAX_ROWS) {
+    throw new ProductImportError(`Import at most ${PRODUCT_IMPORT_MAX_ROWS} product rows.`);
   }
 
   const headerRow = sheet.getRow(1);
@@ -233,7 +253,7 @@ export async function parseProductImport(
     columns.set(header, column);
   }
 
-  const requiredColumns = ["sku", "slug", "name", "description", "category", "priceMode", "stockStatus", "active"];
+  const requiredColumns = ["sku", "name", "description", "category", "priceMode", "stockStatus", "active"];
   const missing = requiredColumns.filter((header) => !columns.has(normalizeHeader(header)));
   if (missing.length) {
     throw new ProductImportError(`Missing required columns: ${missing.join(", ")}. Download the product import template.`);
@@ -248,7 +268,7 @@ export async function parseProductImport(
       if (!imageColumn || column !== imageColumn) {
         throw new ProductImportError(`Row ${rowNumber}: place product pictures in the Image column.`);
       }
-      if (rowNumber < 2 || rowNumber > sheet.rowCount) {
+      if (rowNumber < 2 || rowNumber > Math.max(lastDataRow, sheet.rowCount)) {
         throw new ProductImportError("Place every embedded picture inside its product row in the Image column.");
       }
       if (embeddedImages.has(rowNumber)) {
@@ -290,7 +310,7 @@ export async function parseProductImport(
   const seenSlugs = new Set<string>();
   const errors: string[] = [];
 
-  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
+  for (let rowNumber = 2; rowNumber <= lastDataRow; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
     const values = new Map<string, string>();
     let hasValue = false;
@@ -304,13 +324,19 @@ export async function parseProductImport(
 
       const get = (header: string) => values.get(normalizeHeader(header)) ?? "";
       const sku = requiredText(get("sku"), "sku", rowNumber, 80);
-      const slug = requiredText(get("slug"), "slug", rowNumber, 120).toLowerCase();
       const name = requiredText(get("name"), "name", rowNumber, 160);
+      const providedSlug = get("slug").trim().toLowerCase();
+      let slug = providedSlug;
+      if (!slug) {
+        const base = slugify(name) || slugify(sku) || "product";
+        slug = base;
+        for (let suffix = 2; seenSlugs.has(slug); suffix += 1) slug = `${base}-${suffix}`;
+      }
       const description = requiredText(get("description"), "description", rowNumber, 5000);
       const category = requiredText(get("category"), "category", rowNumber, 100);
       const brand = get("brand");
       if (brand.length > 100) throw new ProductImportError(`Row ${rowNumber}: brand must be 100 characters or fewer.`);
-      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      if (slug.length > 120 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
         throw new ProductImportError(`Row ${rowNumber}: slug must contain lowercase letters, numbers, and hyphens.`);
       }
       if (seenSkus.has(sku)) throw new ProductImportError(`Row ${rowNumber}: duplicate SKU "${sku}".`);
@@ -353,6 +379,7 @@ export async function parseProductImport(
       imported.push({
         sku,
         slug,
+        ...(providedSlug ? {} : { slugGenerated: true as const }),
         name,
         description,
         category,
