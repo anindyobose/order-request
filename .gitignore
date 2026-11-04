@@ -39,6 +39,8 @@ yarn-error.log*
 /backups/
 /deploy/gcp.env
 /deploy/gcp.secrets.env
+/deploy/gcp.preprod.env
+/deploy/gcp.preprod.secrets.env
 /.gcp-deploy/
 
 # vercel
