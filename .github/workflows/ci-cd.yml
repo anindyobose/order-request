@@ -42,7 +42,7 @@ jobs:
   deploy:
     name: Deploy to production (Google Cloud)
     needs: test
-    if: ${{ !inputs.seed_admin }} && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: ${{ !inputs.seed_admin && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}
