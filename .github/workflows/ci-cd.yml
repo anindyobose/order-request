@@ -40,7 +40,7 @@ jobs:
           DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build?schema=public
 
   deploy:
-    name: Deploy to production (Google Cloud)
+    name: Deploy to Google Cloud
     needs: test
     if: ${{ !inputs.seed_admin && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
     runs-on: ubuntu-latest
