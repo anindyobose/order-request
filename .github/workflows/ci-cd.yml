@@ -5,6 +5,16 @@ on:
   push:
     branches: [main, develop]
   workflow_dispatch:
+    inputs:
+      seed_admin:
+        description: Create the first admin account (one-off) instead of the normal flow
+        type: boolean
+        default: false
+      seed_environment:
+        description: Environment to seed
+        type: choice
+        options: [pre-production, production]
+        default: pre-production
 
 permissions:
   contents: read
@@ -12,6 +22,7 @@ permissions:
 jobs:
   test:
     name: Lint, test and build
+    if: ${{ !inputs.seed_admin }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -31,7 +42,7 @@ jobs:
   deploy:
     name: Deploy to production (Google Cloud)
     needs: test
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: ${{ !inputs.seed_admin }} && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'pre-production' }}
@@ -89,3 +100,62 @@ jobs:
           WEB_SERVICE: ${{ github.ref == 'refs/heads/develop' && 'web-preprod' || 'web' }}
           WORKER_SERVICE: ${{ github.ref == 'refs/heads/develop' && 'worker-preprod' || 'worker' }}
         run: bash deploy/deploy-gcp.sh
+
+  seed-admin:
+    name: Seed admin (one-off)
+    if: ${{ inputs.seed_admin }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.seed_environment }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: ${{ inputs.seed_environment }}-seed-admin
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Clones the already-deployed migrate job (same image, service account, Cloud SQL and
+      # secrets), swaps the command for the seed script, runs it once, then deletes it.
+      # The admin credentials come from this environment's secrets and exist only in the
+      # temporary job definition.
+      - name: Seed admin
+        env:
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_NAME: Shop Administrator
+          APP_NAME: ${{ inputs.seed_environment == 'production' && 'order-request' || 'order-request-preprod' }}
+        run: |
+          set -euo pipefail
+          [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_PASSWORD" ] || { echo "::error::Set ADMIN_EMAIL and ADMIN_PASSWORD secrets on the environment."; exit 1; }
+          set -a; . deploy/gcp.config; set +a
+          APP_NAME_OVERRIDE="$APP_NAME"
+          REGION="${REGION}"
+          SEED_JOB="${APP_NAME_OVERRIDE}-seed-admin"
+          gcloud run jobs describe "${APP_NAME_OVERRIDE}-migrate" --region "$REGION" --format=export > /tmp/job.yaml
+          python3 - "$SEED_JOB" <<'PY'
+          import os, sys, yaml
+          d = yaml.safe_load(open('/tmp/job.yaml'))
+          d['metadata']['name'] = sys.argv[1]
+          d.pop('status', None)
+          for k in ('resourceVersion', 'uid', 'generation', 'creationTimestamp', 'selfLink'):
+              d['metadata'].pop(k, None)
+          c = d['spec']['template']['spec']['template']['spec']['containers'][0]
+          c['command'] = ['node']
+          c['args'] = ['scripts/seed-admin.mjs']
+          env = c.setdefault('env', [])
+          for k in ('ADMIN_EMAIL', 'ADMIN_PASSWORD', 'ADMIN_NAME'):
+              env.append({'name': k, 'value': os.environ[k]})
+          yaml.safe_dump(d, open('/tmp/seed-job.yaml', 'w'))
+          PY
+          trap 'gcloud run jobs delete "$SEED_JOB" --region "$REGION" --quiet || true; rm -f /tmp/job.yaml /tmp/seed-job.yaml' EXIT
+          gcloud run jobs replace /tmp/seed-job.yaml --region "$REGION"
+          gcloud run jobs execute "$SEED_JOB" --region "$REGION" --wait
